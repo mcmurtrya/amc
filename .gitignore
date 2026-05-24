@@ -1,0 +1,61 @@
+# Data: keep structure, ignore contents
+data/raw/*
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+data/features/*
+!data/features/.gitkeep
+
+# DuckDB
+*.duckdb
+*.duckdb.wal
+*.duckdb.tmp
+
+# Parquet
+*.parquet
+
+# Environment
+.env
+.venv/
+venv/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+pytest-cache-files-*/
+*.egg-info/
+build/
+dist/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# uv cache (lockfile IS committed)
+.uv-cache/
+
+# Model artifacts
+*.pt
+*.pth
+*.pkl
+*.joblib
+*.safetensors
+
+# Results — keep .md docs, ignore large outputs
+results/figures/
+results/checkpoints/
+results/embeddings/
+
+# OS
+.DS_Store
+Thumbs.db

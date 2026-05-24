@@ -1,0 +1,27 @@
+# Phase 1 canonical price universe.
+# Read by src/metals/data/prices.py to drive yfinance ingestion.
+
+metals:
+  - { ticker: "GC=F", name: gold_futures }
+  - { ticker: "SI=F", name: silver_futures }
+  - { ticker: "PL=F", name: platinum_futures }
+  - { ticker: "PA=F", name: palladium_futures }
+
+etfs:
+  - { ticker: "GLD", name: gold_etf }
+  - { ticker: "SLV", name: silver_etf }
+  - { ticker: "PPLT", name: platinum_etf }
+  - { ticker: "PALL", name: palladium_etf }
+
+benchmarks:
+  - { ticker: "^GSPC", name: sp500 }
+  - { ticker: "^VIX", name: vix }
+  - { ticker: "HG=F", name: copper_futures }
+  - { ticker: "CL=F", name: wti_oil_futures }
+  - { ticker: "DX=F", name: usd_index }
+
+# Default date range. start is the earliest date we attempt to pull;
+# end: null means "today".
+date_range:
+  start: "2007-01-01"
+  end: null

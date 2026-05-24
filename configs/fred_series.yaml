@@ -1,0 +1,34 @@
+# Phase 1 FRED series.
+# Read by src/metals/data/fred.py.
+
+series:
+  # TIPS (real) yields
+  - { id: "DFII10", name: tips_10y, freq: daily }
+  - { id: "DFII5",  name: tips_5y,  freq: daily }
+  - { id: "DFII2",  name: tips_2y,  freq: daily }
+
+  # Nominal Treasury yields
+  - { id: "DGS10",  name: treasury_10y, freq: daily }
+  - { id: "DGS2",   name: treasury_2y,  freq: daily }
+  - { id: "DGS3MO", name: treasury_3mo, freq: daily }
+
+  # USD index (broad)
+  - { id: "DTWEXBGS", name: usd_broad_index, freq: daily }
+
+  # Equity volatility
+  - { id: "VIXCLS", name: vix_close, freq: daily }
+
+  # Inflation expectations (breakevens)
+  - { id: "T10YIE", name: breakeven_10y, freq: daily }
+  - { id: "T5YIE",  name: breakeven_5y,  freq: daily }
+
+  # Credit spread proxy (HY OAS)
+  - { id: "BAMLH0A0HYM2", name: hy_oas, freq: daily }
+
+  # Fed balance sheet (weekly)
+  - { id: "WALCL", name: fed_balance_sheet, freq: weekly }
+
+# Default date range; the API caps at the series' own start date if earlier.
+date_range:
+  start: "2007-01-01"
+  end: null
