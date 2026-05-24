@@ -47,7 +47,11 @@ def fetch_fred_series(
     fred = _client()
     frames: list[pd.DataFrame] = []
     for sid in series_ids:
-        s = fred.get_series(sid, observation_start=start, observation_end=end)
+        try:
+            s = fred.get_series(sid, observation_start=start, observation_end=end)
+        except ValueError as exc:
+            print(f"WARNING: skipping FRED series {sid!r}: {exc}")
+            continue
         if s is None or len(s) == 0:
             continue
         df = s.reset_index()

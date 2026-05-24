@@ -2,10 +2,9 @@
 # Read by src/metals/data/fred.py.
 
 series:
-  # TIPS (real) yields
+  # TIPS (real) yields. No DFII2 — shortest TIPS issuance is 5y.
   - { id: "DFII10", name: tips_10y, freq: daily }
   - { id: "DFII5",  name: tips_5y,  freq: daily }
-  - { id: "DFII2",  name: tips_2y,  freq: daily }
 
   # Nominal Treasury yields
   - { id: "DGS10",  name: treasury_10y, freq: daily }

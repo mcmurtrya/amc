@@ -19,10 +19,13 @@ def compute_log_returns(
 ) -> pd.DataFrame:
     """Log returns over each horizon, computed as log(P_t / P_{t-h}).
 
+    Non-positive prices (e.g. WTI on 2020-04-20) are masked to NaN before the
+    log, so the resulting return cell is NaN rather than -inf or a warning.
+
     Output column convention: ``{ticker}_ret_{h}d``.
     """
     out: dict[str, pd.Series] = {}
-    log_p = np.log(prices)
+    log_p = np.log(prices.where(prices > 0))
     for h in horizons:
         diffs = log_p - log_p.shift(h)
         for col in prices.columns:
@@ -78,7 +81,8 @@ def compute_max_drawdown(
     """
     out: dict[str, pd.Series] = {}
     for col in prices.columns:
-        roll_max = prices[col].rolling(window=window, min_periods=window).max()
-        dd = prices[col] / roll_max - 1.0
+        p = prices[col].where(prices[col] > 0)
+        roll_max = p.rolling(window=window, min_periods=window).max()
+        dd = p / roll_max - 1.0
         out[f"{col}_maxdd_{window}d"] = dd
     return pd.DataFrame(out, index=prices.index)

@@ -18,7 +18,7 @@ benchmarks:
   - { ticker: "^VIX", name: vix }
   - { ticker: "HG=F", name: copper_futures }
   - { ticker: "CL=F", name: wti_oil_futures }
-  - { ticker: "DX=F", name: usd_index }
+  # USD index sourced from FRED DTWEXBGS instead of DX=F (delisted on yfinance).
 
 # Default date range. start is the earliest date we attempt to pull;
 # end: null means "today".

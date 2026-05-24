@@ -60,24 +60,20 @@ def fetch_yfinance(
     )
 
     frames: list[pd.DataFrame] = []
+    col_rename = {
+        "Open": "open", "High": "high", "Low": "low",
+        "Close": "close", "Adj Close": "adj_close", "Volume": "volume",
+    }
     # Multi-ticker downloads return a column MultiIndex; single returns flat.
     if isinstance(raw.columns, pd.MultiIndex):
         for tk in tickers:
             if tk not in raw.columns.get_level_values(0):
                 continue
-            sub = raw[tk].reset_index().rename(columns={
-                "Date": "timestamp_utc",
-                "Open": "open", "High": "high", "Low": "low",
-                "Close": "close", "Adj Close": "adj_close", "Volume": "volume",
-            })
+            sub = raw[tk].reset_index(names="timestamp_utc").rename(columns=col_rename)
             sub["ticker"] = tk
             frames.append(sub)
     else:
-        sub = raw.reset_index().rename(columns={
-            "Date": "timestamp_utc",
-            "Open": "open", "High": "high", "Low": "low",
-            "Close": "close", "Adj Close": "adj_close", "Volume": "volume",
-        })
+        sub = raw.reset_index(names="timestamp_utc").rename(columns=col_rename)
         sub["ticker"] = tickers[0]
         frames.append(sub)
 

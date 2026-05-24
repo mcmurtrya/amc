@@ -74,3 +74,41 @@ def test_max_drawdown_zero_for_monotone_rising():
     p = pd.DataFrame({"A": np.arange(100, dtype=float) + 1.0}, index=idx)
     mdd = compute_max_drawdown(p, window=20)
     assert (mdd.dropna()["A_maxdd_20d"] == 0.0).all()
+
+
+def test_log_returns_handles_nonpositive_price():
+    """A non-positive price (cf. WTI on 2020-04-20) must produce NaN returns,
+    not -inf or a propagated negative value."""
+    p = _toy_prices(n=10)
+    p.iloc[5, 0] = -37.63   # Simulate WTI going negative.
+    p.iloc[6, 0] = 0.0       # And a hard zero immediately after.
+    r = compute_log_returns(p, horizons=(1,))
+    # Returns into the bad rows (t=5,6) and out of them (t=6,7) must be NaN.
+    assert pd.isna(r["A_ret_1d"].iloc[5])
+    assert pd.isna(r["A_ret_1d"].iloc[6])
+    assert pd.isna(r["A_ret_1d"].iloc[7])
+    # Returns elsewhere must remain finite.
+    finite = r["A_ret_1d"].dropna()
+    assert np.isfinite(finite).all()
+    # The clean column B should be untouched.
+    assert r["B_ret_1d"].iloc[1:].notna().all()
+
+
+def test_log_returns_does_not_warn_on_nonpositive_price():
+    """Regression: np.log must not emit RuntimeWarning on the masked path."""
+    import warnings
+    p = _toy_prices(n=10)
+    p.iloc[5, 0] = -1.0
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        compute_log_returns(p, horizons=(1, 5))  # would raise if warning fired
+
+
+def test_max_drawdown_masks_nonpositive():
+    """Drawdown must stay in [-1, 0] even when the input has a negative price."""
+    p = _toy_prices(n=80)
+    p.iloc[40, 0] = -10.0
+    mdd = compute_max_drawdown(p, window=20)
+    valid = mdd["A_maxdd_20d"].dropna()
+    assert (valid <= 0).all()
+    assert (valid >= -1).all()
