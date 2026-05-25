@@ -107,3 +107,44 @@ _Nothing yet — add the most important meta-lessons here as they accumulate._
 ### Next session
 
 - Either Phase 2 (events + local projections, per the plan) or a focused Phase 1 cleanup pass: investigate `BAMLH0A0HYM2` rename, extract LightGBM feature importances per metal, and check whether the negative IC on Ag/Pt/Pd is feature-mix-driven or genuinely the data.
+
+---
+
+## 2026-05-25 (Phase 2 — events + local projections)
+
+### What I did
+
+- Built `src/metals/models/lp.py`: per-horizon OLS of cumulative h-step-ahead log return on treatment + controls, Newey-West HAC standard errors. 8 tests including a recovery test against a known synthetic IRF.
+- Curated FOMC calendar 2007-2026 from federalreserve.gov pages, committed at `configs/fomc_calendar.csv`. 176 events. `src/metals/data/events.py` loader + upsert + CLI.
+- CFTC disaggregated COT positioning, 2010-2026, 3,420 rows. Critical Friday-close-of-release timestamp convention (not Tuesday positioning date). Excludes E-MINI / MICRO gold variants. Module + 5 tests.
+- Bauer-Swanson MPS_ORTH FOMC surprises via SF Fed XLSX. Migration 002 added `fomc_surprises` table. 361 rows 1988-2023.
+- Wrote five Phase 2 notebooks:
+  - `02_fomc_indicator_irf.ipynb` — smoke test, indicator only. Weak as the plan predicted.
+  - `03_fomc_surprise_irf.ipynb` — **headline result**. Hawkish IRFs are sharp negative across all four metals (gold -1.5% at h=5, silver amplified). Dovish IRFs are small positive and insignificant.
+  - `04_geopol_dxy_irf.ipynb` — GPR mostly null on top-5% threshold; DXY +2σ weak; DXY −2σ surprisingly negative (risk-off sample contamination).
+  - `05_fomc_robustness.ipynb` — 100-trial placebo, 2015 subsample, alt thresholds. Hawkish IRF survives for Au/Ag/Pt, weakens for palladium post-2015.
+- Wrote `results/phase2_scenarios.md` — durable Phase 2 record, scenario-by-scenario tables, methodology notes, Phase 5 hand-off.
+
+### What I learned
+
+- **Bauer-Swanson MPS_ORTH was the right pivot.** The plan flags consensus history as the binding constraint; pivoting to a public high-frequency-identified surprise series (already orthogonalised for the Fed information effect) turned the hardest piece of Phase 2 into a 50-line ingestion module.
+- **Indicator-only vs surprise spec is a real signal multiplier.** Pooled FOMC indicator: 3/24 borderline-significant cells (notebook 02). Tercile-split surprise: 11/24 significant cells. The plan's "indicator alone is mostly priced in" was vindicated numerically.
+- **Cross-metal sign consistency is a cheap, powerful filter.** For monetary scenarios Au/Ag/Pt should track. They do for hawkish FOMC. They don't for GPR spikes (palladium goes positive at h=20 while others stay near zero), which is itself a yellow flag on that scenario.
+- **Placebo distributions are tighter than I expected.** With ~3,400 trading days × 35 random "events" each trial, the placebo SD at h=5 is < 1% for gold. Makes the p=0.000 for real Au and Ag a strong robustness signal rather than a coincidence.
+- **2σ DXY -shock landed in unexpected territory.** The down-shock subsample is heavily contaminated by risk-off regimes where USD weakness and metal selling co-occur, inverting the textbook FX-pricing channel. Useful reminder that "weakening dollar" means different things in different macro regimes.
+
+### What confused me
+
+- **Palladium's regime instability.** Hawkish FOMC -4.68% at h=5 pre-2015, near-zero and insignificant post-2015. Most likely the 2018-22 supply squeeze dominating, but worth a Phase 5 second opinion.
+- **The dovish/hawkish asymmetry.** Hawkish surprises produce sharp negative IRFs; dovish surprises produce mirror-image-shaped but insignificant positive IRFs. Could be tail-risk hedging asymmetry, regime composition of the 2010-2023 sample, or just sample noise on 35 events per tercile. Not resolved.
+
+### Open items not resolved today
+
+- CPI / NFP / ECB / BoE calendars and surprises. Consensus-history acquisition is the binding constraint (Bauer-Swanson is FOMC-only).
+- Refresh Bauer-Swanson XLSX — ~10 FOMC meetings 2024-2026 are missing.
+- Robustness on GPR and DXY scenarios — currently deferred until treatment definitions sharpen.
+- The Phase 1 open items still open: BAMLH0A0HYM2 truncation, ETF/futures correlation note, 2026-01-30 SLV verification.
+
+### Next session
+
+- Phase 3 (text + clustering) or Phase 2 follow-up (CPI/NFP/ECB ingestion). Phase 3 is the bigger pivot and where the multimodal narrative starts; CPI/NFP is incremental and adds robustness to the FOMC story.
