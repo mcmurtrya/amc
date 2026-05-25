@@ -186,7 +186,10 @@ def fetch_gkg(start_date: date | str, end_date: date | str) -> pd.DataFrame:
     query = build_query(start_date, end_date, themes)
     client = bigquery.Client()
     job = client.query(query)
-    raw = job.to_dataframe()
+    # Use the REST-based result iterator instead of the BigQuery Storage API.
+    # Storage API is faster but requires an extra role (bigquery.readsessions.create);
+    # our themed result sets are small enough that REST is fine.
+    raw = job.to_dataframe(create_bqstorage_client=False)
     return parse_gkg_rows(raw, themes)
 
 

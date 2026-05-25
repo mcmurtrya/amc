@@ -1,39 +1,44 @@
-# Phase 3 step 3.2: GKG theme filter set.
-# We filter GDELT 2.0 GKG records to articles tagged with at least one
-# of these themes. Themes are matched case-sensitively against the
-# V2Themes field; substring matching is fine because the field is a
-# semicolon-separated list of theme codes with character offsets.
+# Phase 3 step 3.2: GKG theme filter set, verified against the GDELT 2.0
+# theme vocabulary at:
+#   http://data.gdeltproject.org/api/v2/guides/LOOKUP-GKGTHEMES.TXT
 #
-# Source vocabulary: GDELT GKG Themes / CAMEO codes
-# https://blog.gdeltproject.org/gdelt-2-0-our-global-world-in-realtime/
+# We filter GDELT 2.0 GKG records to articles tagged with at least one of
+# these themes. Theme codes are case-sensitive and matched against the
+# semicolon-separated V2Themes field. The naming conventions are:
+#
+#   ECON_*  - GDELT's own economics taxonomy
+#   EPU_*   - Economic Policy Uncertainty index categories
+#   WB_*    - World Bank development taxonomy
+#   ENV_*   - Environmental themes
+#
+# Themes intentionally NOT included despite being mentioned in the plan:
+#   * KILL, MILITARY, PROTEST - over 50% / 23% / 20% of all daily articles
+#     respectively. Dominate the corpus with low metals relevance.
+#   * GEOPOLITICAL, WB_2462_GEOPOLITICAL_INSTABILITY - either don't exist in
+#     the current GDELT vocab or have non-standard codes.
+#   * SILVER/COPPER/PLATINUM/PALLADIUM-specific themes - GDELT has no
+#     per-metal price code other than ECON_GOLDPRICE. The other metals are
+#     captured via WB_1699_METAL_ORE_MINING + body content.
 
 themes:
-  # Monetary / inflation
+  # Monetary policy
+  - ECON_CENTRALBANK
+  - WB_1235_CENTRAL_BANKS
+  - EPU_POLICY_MONETARY_POLICY
+  - WB_444_MONETARY_POLICY
+
+  # Interest rates and inflation
   - ECON_INTEREST_RATES
+  - EPU_POLICY_INTEREST_RATES
+  - WB_1125_INTEREST_RATE_POLICY
   - ECON_INFLATION
-  - ECON_HOUSE_PRICES
-  - ECON_CENTRALBANKER
-  - ECON_MONETARY_POLICY
-  - CENTRAL_BANK
+  - WB_442_INFLATION
 
-  # Commodities
-  - COMMODITIES_GOLD
-  - COMMODITIES_SILVER
-  - COMMODITIES_OIL
-  - COMMODITIES_COPPER
-  - MINING
+  # Commodities and metals
+  - ECON_GOLDPRICE
+  - WB_1164_COMMODITY_PRICES_SHOCKS
+  - WB_1699_METAL_ORE_MINING
 
-  # Geopolitical risk
-  - GEOPOLITICAL
-  - WB_2462_GEOPOLITICAL_INSTABILITY
-  - WB_2470_TERRORISM
-  - WB_2452_FOREIGN_POLICY
-  - MILITARY
-  - KILL
-  - PROTEST
-  - WAR
-
-  # Trade
-  - TRADE_DISPUTE
-  - TARIFF
+  # Trade and sanctions
   - SANCTIONS
+  - ECON_TRADE_DISPUTE
