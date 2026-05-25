@@ -1,0 +1,39 @@
+# Phase 3 step 3.2: GKG theme filter set.
+# We filter GDELT 2.0 GKG records to articles tagged with at least one
+# of these themes. Themes are matched case-sensitively against the
+# V2Themes field; substring matching is fine because the field is a
+# semicolon-separated list of theme codes with character offsets.
+#
+# Source vocabulary: GDELT GKG Themes / CAMEO codes
+# https://blog.gdeltproject.org/gdelt-2-0-our-global-world-in-realtime/
+
+themes:
+  # Monetary / inflation
+  - ECON_INTEREST_RATES
+  - ECON_INFLATION
+  - ECON_HOUSE_PRICES
+  - ECON_CENTRALBANKER
+  - ECON_MONETARY_POLICY
+  - CENTRAL_BANK
+
+  # Commodities
+  - COMMODITIES_GOLD
+  - COMMODITIES_SILVER
+  - COMMODITIES_OIL
+  - COMMODITIES_COPPER
+  - MINING
+
+  # Geopolitical risk
+  - GEOPOLITICAL
+  - WB_2462_GEOPOLITICAL_INSTABILITY
+  - WB_2470_TERRORISM
+  - WB_2452_FOREIGN_POLICY
+  - MILITARY
+  - KILL
+  - PROTEST
+  - WAR
+
+  # Trade
+  - TRADE_DISPUTE
+  - TARIFF
+  - SANCTIONS

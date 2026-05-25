@@ -36,6 +36,9 @@ dependencies = [
     "requests>=2.31",
     "xlrd>=2.0",
     "openpyxl>=3.1",
+    "google-cloud-bigquery>=3.20",
+    "google-cloud-bigquery-storage>=2.24",
+    "db-dtypes>=1.2",
     # Plotting
     "matplotlib>=3.8",
     "seaborn>=0.13",

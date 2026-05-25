@@ -37,6 +37,24 @@ uv run python -m metals.data.migrations.runner
 uv run pytest
 ```
 
+### Windows + OneDrive venv location
+
+If the project lives inside a OneDrive-synced folder (e.g.
+`C:\Users\<you>\OneDrive\...`), put the virtual environment **outside** OneDrive
+to avoid file-lock errors during `uv sync` (OneDrive holds files open while
+syncing, which breaks atomic dist-info replacement). One-time setup:
+
+```powershell
+# In any new PowerShell session for this project
+$env:UV_PROJECT_ENVIRONMENT = "C:\Users\mcmur\.venvs\amc-research"
+
+uv sync --extra dev --link-mode=copy
+```
+
+Every subsequent `uv` command in the session inherits the variable, so the same
+project-local venv is reused. Do **not** set this user-scoped — that breaks
+other projects.
+
 ## Project layout
 
 ```
