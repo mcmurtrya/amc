@@ -35,6 +35,7 @@ dependencies = [
     "fredapi>=0.5",
     "requests>=2.31",
     "xlrd>=2.0",
+    "openpyxl>=3.1",
     # Plotting
     "matplotlib>=3.8",
     "seaborn>=0.13",
