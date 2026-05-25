@@ -39,23 +39,32 @@ def assert_target_strictly_future(
     features: pd.DataFrame,
     target: pd.Series,
     target_horizon: int,
+    min_nan_tail: int | None = None,
 ) -> None:
-    """Sanity check that ``target`` is at least ``target_horizon`` steps ahead.
+    """Sanity check that ``target`` is built from strictly-future observations.
 
-    Specifically, the target observed at row index t must originate from
-    a source observation at index >= t + target_horizon. We can't verify
-    the source directly, but we can check that the target series has
-    `target_horizon` NaN tail values (typical of a forward-shift operation).
+    For a point-valued target (e.g. forward return at t+h), ``min_nan_tail``
+    equals ``target_horizon``. For a window-valued target (e.g. realised vol
+    over [t+h, t+h+w-1]), the caller must pass ``min_nan_tail = h + w - 1``
+    — otherwise this guard cannot catch a target whose window overlaps the
+    present and silently leaks the most recent ``w-1`` days of returns.
+
+    Verifies (a) index alignment and (b) at least ``min_nan_tail`` trailing
+    NaN values in the target.
     """
     if target_horizon <= 0:
         raise LeakageError(f"target_horizon must be >= 1, got {target_horizon}")
+    if min_nan_tail is None:
+        min_nan_tail = target_horizon
+    if min_nan_tail <= 0:
+        raise LeakageError(f"min_nan_tail must be >= 1, got {min_nan_tail}")
     if not features.index.equals(target.index):
         raise LeakageError("features and target indices must align exactly.")
-    tail = target.iloc[-target_horizon:]
+    tail = target.iloc[-min_nan_tail:]
     if tail.notna().any():
         raise LeakageError(
-            f"target tail of {target_horizon} rows contains non-NaN values; "
-            "suspect that target is not strictly future."
+            f"target tail of {min_nan_tail} rows contains non-NaN values; "
+            "suspect that the target's source window overlaps the present."
         )
 
 

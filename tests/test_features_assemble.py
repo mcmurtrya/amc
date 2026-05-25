@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from metals.features.assemble import build_feature_matrix, shift_target
 
@@ -60,13 +61,46 @@ def test_build_feature_matrix_returns_dataclass_with_expected_shape():
 
 
 def test_target_realized_vol_is_strictly_future():
+    """For realized-vol target with window w and horizon h, the target's
+    source window is [t+h, t+h+w-1], so the last (h+w-1) rows must be NaN."""
     prices = _toy_prices()
     macro = _toy_macro(prices.index)
+    h, w = 5, 20
     fm = build_feature_matrix(
         prices=prices, macro_wide=macro,
-        target_ticker="GC=F", target_kind="realized_vol", target_horizon=5,
+        target_ticker="GC=F", target_kind="realized_vol",
+        target_horizon=h, realized_vol_window=w,
     )
-    assert fm.y.iloc[-5:].isna().all()
+    expected_nan_tail = h + w - 1
+    assert fm.y.iloc[-expected_nan_tail:].isna().all()
+    # And the row just before the tail must be defined.
+    assert pd.notna(fm.y.iloc[-(expected_nan_tail + 1)])
+
+
+def test_target_realized_vol_does_not_peek_at_past():
+    """Regression for the original window-overlap bug. Construct a price path
+    that is flat except for a one-time step at ``spike_idx`` (so only one
+    nonzero return, at ``spike_idx``). The forward target at t=spike_idx
+    measures vol over [spike_idx+h, spike_idx+h+w-1], which is past the spike,
+    so y[spike_idx] must be 0. The old buggy target (trailing window ending at
+    t+h) would have included the spike return and produced a nonzero value."""
+    prices = _toy_prices(n=400)
+    spike_idx = 200
+    levels = np.full(len(prices), 1000.0)
+    levels[spike_idx:] = 1050.0  # one-time price step → exactly one nonzero return
+    prices["GC=F"] = levels
+    macro = _toy_macro(prices.index)
+    h, w = 5, 20
+    fm = build_feature_matrix(
+        prices=prices, macro_wide=macro,
+        target_ticker="GC=F", target_kind="realized_vol",
+        target_horizon=h, realized_vol_window=w,
+    )
+    assert fm.y.iloc[spike_idx] == pytest.approx(0.0, abs=1e-9), (
+        f"y at t={spike_idx} should be 0 (spike is in the past of the forward "
+        f"window) but is {fm.y.iloc[spike_idx]} — looks like the target is "
+        f"peeking at returns observed at or before t."
+    )
 
 
 def test_target_return_works():
@@ -83,7 +117,6 @@ def test_target_return_works():
 def test_build_rejects_unknown_target_ticker():
     prices = _toy_prices()
     macro = _toy_macro(prices.index)
-    import pytest
     with pytest.raises(ValueError, match="not present"):
         build_feature_matrix(
             prices=prices, macro_wide=macro,

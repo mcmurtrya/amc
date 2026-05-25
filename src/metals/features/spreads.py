@@ -43,9 +43,12 @@ def compute_log_spread_changes(
 ) -> pd.DataFrame:
     """Log change of each ratio over each horizon.
 
+    Non-positive ratios (e.g. Au/Oil on 2020-04-20 when WTI was -$37.63) are
+    masked to NaN before the log to avoid silent ``-inf``/``RuntimeWarning``.
+
     Output column convention: ``{ratio_name}_logchg_{h}d``.
     """
-    log_r = np.log(ratios)
+    log_r = np.log(ratios.where(ratios > 0))
     out: dict[str, pd.Series] = {}
     for h in horizons:
         diff = log_r - log_r.shift(h)

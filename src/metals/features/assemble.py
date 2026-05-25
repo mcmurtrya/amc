@@ -122,12 +122,17 @@ def build_feature_matrix(
             .rolling(window=realized_vol_window, min_periods=realized_vol_window)
             .std() * ANN
         )
-        # Predict realized vol over the window ENDING at t + horizon
-        y = shift_target(realized, target_horizon)
+        # Target window starts target_horizon days ahead and spans
+        # realized_vol_window days: [t+h, t+h+w-1]. Equivalently, the
+        # trailing-window realized vol at row (t+h+w-1) shifted back to t.
+        shift_steps = target_horizon + realized_vol_window - 1
+        y = realized.shift(-shift_steps)
         target_name = f"{target_ticker}_rvol_{realized_vol_window}d_fwd{target_horizon}"
+        nan_tail = shift_steps
     elif target_kind == "return":
         y = shift_target(target_returns_1d[ret_col], target_horizon)
         target_name = f"{target_ticker}_ret_1d_fwd{target_horizon}"
+        nan_tail = target_horizon
     else:
         raise ValueError(f"Unknown target_kind: {target_kind!r}")
 
@@ -138,7 +143,7 @@ def build_feature_matrix(
 
     # Leakage guards
     assert_features_have_history(X, min_warmup=min_warmup)
-    assert_target_strictly_future(X, y, target_horizon=target_horizon)
+    assert_target_strictly_future(X, y, target_horizon=target_horizon, min_nan_tail=nan_tail)
 
     return FeatureMatrix(
         X=X,
