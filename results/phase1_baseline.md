@@ -66,3 +66,63 @@ foreach ($t in "GC=F","SI=F","PL=F","PA=F") {
 ```
 
 Run records live in the eval harness (`runs` and `run_predictions` tables in `data/processed/metals.duckdb`) — use `metals.eval.harness.compute_metrics(run_id)` to recompute the headline numbers.
+
+---
+
+## Lean feature-set comparison (2026-06-18)
+
+Following the negative-IC diagnosis (`results/phase1_negative_ic_diagnosis.md`),
+which identified the 108-feature returns-and-vol block as net-negative for IC,
+`lgbm_vol` gained a `--feature-set` switch:
+
+- `full` — all 142 features (the original baseline).
+- `lean` — drop the entire returns-and-vol block; keep spreads + macro (34 feats).
+- `lean_own` — `lean` plus *only the target metal's own* returns/vol (43 feats).
+
+All three were re-run on current data (post-`BAA10Y` FRED refresh), 22 walk-forward
+splits, identical LightGBM config. Mean IC (headline metric) and mean RMSE:
+
+| Metal | full IC | lean IC | lean_own IC | full RMSE | lean RMSE | lean_own RMSE |
+|---|---:|---:|---:|---:|---:|---:|
+| Gold (GC=F)      | +0.022 | **+0.098** | +0.099 | 0.0558 | 0.0563 | 0.0553 |
+| Silver (SI=F)    | -0.068 | **+0.079** | -0.069 | 0.1326 | 0.1238 | 0.1248 |
+| Platinum (PL=F)  | -0.054 | **+0.047** | -0.056 | 0.0982 | 0.1058 | 0.0959 |
+| Palladium (PA=F) | **-0.016** | -0.043 | -0.099 | 0.1340 | 0.1482 | 0.1341 |
+
+### Findings
+
+- **`lean` is the IC winner for gold, silver, and platinum.** Dropping the
+  returns-and-vol block flips silver and platinum from negative to positive IC and
+  more than quadruples gold's. This is the production-relevant result.
+- **`lean_own` does not help — and usually hurts.** Adding back only the target
+  metal's own returns/vol takes silver (+0.079 -> -0.069) and platinum
+  (+0.047 -> -0.056) back negative; gold is unchanged. Even own-series vol
+  clustering is net noise for this target/horizon once spreads + macro are present.
+- **Palladium is the exception.** Every feature set leaves it at or below zero IC,
+  and `lean` makes it worse, not better. Its `full` IC (-0.016) is already
+  noise-of-zero. Consistent with Phase 2: palladium trades on its supply squeeze /
+  industrial dynamics, not the macro/monetary channel this feature set captures. It
+  needs its own feature treatment (deferred).
+- **IC vs RMSE caveat.** `lean` improves IC for platinum while slightly worsening
+  RMSE (0.0982 -> 0.1058): it ranks better but is marginally less accurate on level.
+  Gold and silver hold or improve on both. RMSE is reported for completeness; IC is
+  the plan's headline metric for this baseline.
+
+### Recommendation
+
+Adopt `lean` as the Phase 1 production baseline for gold, silver, and platinum;
+keep palladium on `full` (or give it a bespoke feature set) until its drivers are
+modeled. `lean_own` can be retired.
+
+Note: the current-data `full` IC differs from the original (May-25) baseline table
+above (e.g. gold +0.070 -> +0.022) because of the FRED refresh (`BAA10Y` now live)
+plus additional recent data. The lean-vs-full *comparison* is apples-to-apples on
+the same current data.
+
+### Reproducing
+
+```powershell
+foreach ($t in "GC=F","SI=F","PL=F","PA=F") {
+  uv run python -m metals.models.lgbm_vol --ticker $t --feature-set lean --horizon 5
+}
+```

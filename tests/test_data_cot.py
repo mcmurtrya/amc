@@ -136,3 +136,34 @@ def test_missing_swap_columns_treated_as_zero():
     out = parse_cot_dataframe(raw)
     assert out.loc[0, "commercial_long"] == 100
     assert out.loc[0, "commercial_short"] == 50
+
+
+def test_release_delayed_by_holiday_week():
+    """A federal holiday in the report week pushes release past the nominal Friday.
+
+    Thanksgiving 2022 (Thu 2022-11-24): Tuesday 2022-11-22 positioning would
+    normally publish Fri 2022-11-25, but the CFTC slips it to Mon 2022-11-28.
+    July 4 2024 (Thu): Tuesday 2024-07-02 -> Mon 2024-07-08.
+    """
+    raw = _synthetic_raw([
+        {"Market_and_Exchange_Names": "GOLD - COMMODITY EXCHANGE INC.",
+         "Report_Date_as_YYYY-MM-DD": "2022-11-22", "Open_Interest_All": 1},
+        {"Market_and_Exchange_Names": "SILVER - COMMODITY EXCHANGE INC.",
+         "Report_Date_as_YYYY-MM-DD": "2024-07-02", "Open_Interest_All": 1},
+    ])
+    out = parse_cot_dataframe(raw).set_index("metal")
+    assert out.loc["gold", "timestamp_utc"] == pd.Timestamp("2022-11-28")
+    assert out.loc["silver", "timestamp_utc"] == pd.Timestamp("2024-07-08")
+    # Both land on a Monday (weekday 0), not the nominal Friday.
+    assert out.loc["gold", "timestamp_utc"].weekday() == 0
+
+
+def test_release_normal_week_is_friday():
+    """No holiday in the week -> nominal Friday is preserved (regression guard)."""
+    raw = _synthetic_raw([
+        {"Market_and_Exchange_Names": "GOLD - COMMODITY EXCHANGE INC.",
+         "Report_Date_as_YYYY-MM-DD": "2024-05-21", "Open_Interest_All": 1},
+    ])
+    out = parse_cot_dataframe(raw)
+    assert out.loc[0, "timestamp_utc"] == pd.Timestamp("2024-05-24")
+    assert out.loc[0, "timestamp_utc"].weekday() == 4

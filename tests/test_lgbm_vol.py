@@ -83,3 +83,54 @@ def test_lgbm_baseline_runs_end_to_end(monkeypatch):
     assert not metrics.empty
     row = metrics.iloc[0]
     assert np.isfinite(row["rmse"])
+
+    # Phase 1 cleanup: feature importances must be recorded for every split
+    # under both importance types.
+    from metals.eval.harness import (
+        aggregate_feature_importances, fetch_feature_importances,
+    )
+    imps = fetch_feature_importances(run_id)
+    assert not imps.empty
+    assert set(imps["importance_type"]) == {"gain", "split"}
+    # Aggregated table is sorted high -> low and normalized to fractions
+    agg = aggregate_feature_importances(run_id, importance_type="gain")
+    assert not agg.empty
+    assert agg["mean_importance"].iloc[0] >= agg["mean_importance"].iloc[-1]
+    assert agg["n_splits"].max() >= 1
+
+
+def _sample_columns():
+    """A representative feature-name list spanning returns/vol, spreads, macro."""
+    tickers = ["GC=F", "SI=F", "PL=F", "PA=F", "PALL", "GLD", "^VIX"]
+    feats = []
+    for t in tickers:
+        for s in ["ret_1d", "ret_5d", "rvol_20d", "skew_20d", "kurt_20d", "maxdd_60d"]:
+            feats.append(f"{t}_{s}")
+    feats += ["Au_Ag_ratio", "Pt_Pd_ratio", "Au_Cu_ratio", "Au_Oil_ratio"]  # spreads
+    feats += ["real_yield_10y", "dxy_chg_5d", "vix_chg_5d",
+              "baa_spread_chg_5d", "gpr_chg_5d"]  # macro
+    return feats
+
+
+def test_feature_columns_full_and_lean():
+    from metals.models.lgbm_vol import RETURNS_VOL_SUBSTRINGS, feature_columns
+    cols = _sample_columns()
+    rv = [c for c in cols if any(s in c for s in RETURNS_VOL_SUBSTRINGS)]
+    assert feature_columns(cols, "full", "GC=F") == cols
+    lean = feature_columns(cols, "lean", "GC=F")
+    assert not any(c in lean for c in rv)                  # returns/vol all dropped
+    assert all(c in lean for c in cols if c not in rv)     # spreads+macro kept
+
+
+def test_feature_columns_lean_own_keeps_only_target_no_cross_leak():
+    from metals.models.lgbm_vol import RETURNS_VOL_SUBSTRINGS, feature_columns
+    lean_own = feature_columns(_sample_columns(), "lean_own", "PA=F")
+    rv_kept = [c for c in lean_own if any(s in c for s in RETURNS_VOL_SUBSTRINGS)]
+    assert rv_kept and all(c.startswith("PA=F_") for c in rv_kept)  # only PA=F own vol
+    assert not any(c.startswith("PALL_") for c in rv_kept)          # no PALL leak
+
+
+def test_feature_columns_rejects_unknown_set():
+    from metals.models.lgbm_vol import feature_columns
+    with pytest.raises(ValueError):
+        feature_columns(_sample_columns(), "bogus", "GC=F")

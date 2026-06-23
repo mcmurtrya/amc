@@ -19,7 +19,7 @@ def _toy_macro(n: int = 400, seed: int = 2) -> pd.DataFrame:
             "T5YIE": 2.5 + rng.normal(0, 0.05, n).cumsum() * 0.005,
             "DTWEXBGS": 100 + rng.normal(0, 0.5, n).cumsum() * 0.1,
             "VIXCLS": 18 + rng.normal(0, 2, n),
-            "BAMLH0A0HYM2": 4.0 + rng.normal(0, 0.2, n),
+            "BAA10Y": 4.0 + rng.normal(0, 0.2, n),
             "GPR_DAILY": 100 + rng.normal(0, 30, n),
         },
         index=idx,
@@ -54,9 +54,9 @@ def test_real_yield_matches_definition():
 
 
 def test_handles_missing_series_with_nan():
-    m = _toy_macro().drop(columns=["BAMLH0A0HYM2", "GPR_DAILY"])
+    m = _toy_macro().drop(columns=["BAA10Y", "GPR_DAILY"])
     f = compute_macro_features(m)
-    assert f["hy_oas_chg_5d"].isna().all()
+    assert f["baa_spread_chg_5d"].isna().all()
     assert f["gpr_chg_5d"].isna().all()
 
 

@@ -11,9 +11,13 @@ from metals.data.gdelt import build_query, load_themes, parse_gkg_rows
 
 
 def test_load_themes_returns_nonempty_list():
+    # NB: COMMODITIES_GOLD is in the planning doc but does NOT exist in the
+    # real GDELT 2.0 vocabulary — see the comment block in configs/gdelt_themes.yaml.
+    # We assert the canonical replacements: ECON_GOLDPRICE for gold,
+    # ECON_INFLATION as a generic anchor.
     themes = load_themes()
     assert len(themes) > 5
-    assert "COMMODITIES_GOLD" in themes
+    assert "ECON_GOLDPRICE" in themes
     assert "ECON_INFLATION" in themes
 
 
@@ -101,7 +105,7 @@ def test_parse_empty_frame_returns_empty_with_schema():
 
 
 def test_parse_offset_suffix_stripped_from_theme_codes():
-    """Themes are stored as 'CODE,offset' in V2Themes — we keep only CODE."""
+    """Themes are stored as 'CODE,offset' in V2Themes - we keep only CODE."""
     raw = pd.DataFrame([_raw_gkg_row(
         date_int=20240115000000,
         themes="COMMODITIES_GOLD,100;COMMODITIES_GOLD,250",   # duplicate after offset strip

@@ -216,3 +216,118 @@ def list_runs(limit: int = 50) -> pd.DataFrame:
             "FROM runs ORDER BY created_at DESC LIMIT ?",
             [limit],
         ).fetchdf()
+
+
+# ---------------------------------------------------------------------------
+# Feature importances (Phase 1 cleanup)
+# ---------------------------------------------------------------------------
+
+_FEATURE_IMPORTANCES_DDL = """
+CREATE TABLE IF NOT EXISTS run_feature_importances (
+    run_id           VARCHAR     NOT NULL,
+    split_id         INTEGER     NOT NULL,
+    feature_name     VARCHAR     NOT NULL,
+    importance       DOUBLE      NOT NULL,
+    importance_type  VARCHAR     NOT NULL DEFAULT 'gain',
+    PRIMARY KEY (run_id, split_id, feature_name, importance_type)
+)
+"""
+
+
+def _ensure_importance_schema(conn) -> None:
+    conn.execute(_FEATURE_IMPORTANCES_DDL)
+
+
+def log_feature_importances(
+    run_id: str,
+    split_id: int,
+    importances: dict[str, float],
+    importance_type: str = "gain",
+) -> None:
+    """Upsert a dict of {feature_name: importance} for a single split.
+
+    Parameters
+    ----------
+    run_id : str
+        The harness run id (from register_run).
+    split_id : int
+        Walk-forward split index.
+    importances : dict[str, float]
+        Map from feature name to scalar importance.
+    importance_type : str
+        Free-form label, e.g. 'gain', 'split', 'shap_abs_mean'. Default 'gain'.
+    """
+    if not importances:
+        return
+    rows = pd.DataFrame({
+        "run_id":          [run_id] * len(importances),
+        "split_id":        [int(split_id)] * len(importances),
+        "feature_name":    list(importances.keys()),
+        "importance":      [float(v) for v in importances.values()],
+        "importance_type": [importance_type] * len(importances),
+    })
+    with connection() as conn:
+        _ensure_importance_schema(conn)
+        conn.register("incoming_importances", rows)
+        conn.execute(
+            """
+            INSERT INTO run_feature_importances
+                (run_id, split_id, feature_name, importance, importance_type)
+            SELECT run_id, split_id, feature_name, importance, importance_type
+            FROM incoming_importances
+            ON CONFLICT (run_id, split_id, feature_name, importance_type) DO UPDATE SET
+                importance = EXCLUDED.importance
+            """
+        )
+        conn.unregister("incoming_importances")
+
+
+def fetch_feature_importances(
+    run_id: str,
+    importance_type: str | None = None,
+) -> pd.DataFrame:
+    """Return all logged importances for a run. Columns:
+    run_id, split_id, feature_name, importance, importance_type."""
+    with connection() as conn:
+        _ensure_importance_schema(conn)
+        if importance_type is None:
+            return conn.execute(
+                "SELECT * FROM run_feature_importances WHERE run_id = ? "
+                "ORDER BY split_id, feature_name",
+                [run_id],
+            ).fetchdf()
+        return conn.execute(
+            "SELECT * FROM run_feature_importances "
+            "WHERE run_id = ? AND importance_type = ? "
+            "ORDER BY split_id, feature_name",
+            [run_id, importance_type],
+        ).fetchdf()
+
+
+def aggregate_feature_importances(
+    run_id: str,
+    importance_type: str = "gain",
+    normalize: bool = True,
+) -> pd.DataFrame:
+    """Average importances across splits, sorted high -> low.
+
+    Columns: feature_name, mean_importance, std_importance, n_splits.
+    If ``normalize=True`` each split's importances are divided by their sum
+    before averaging, so cross-split comparisons aren't dominated by splits
+    that happen to have larger raw gain values.
+    """
+    df = fetch_feature_importances(run_id, importance_type=importance_type)
+    if df.empty:
+        return pd.DataFrame(
+            columns=["feature_name", "mean_importance", "std_importance", "n_splits"]
+        )
+    if normalize:
+        sums = df.groupby("split_id")["importance"].transform("sum")
+        df = df.assign(importance=df["importance"] / sums.replace(0, np.nan))
+    g = df.groupby("feature_name")["importance"]
+    out = pd.DataFrame({
+        "mean_importance": g.mean(),
+        "std_importance":  g.std(ddof=0).fillna(0.0),
+        "n_splits":        g.count(),
+    }).reset_index()
+    return out.sort_values("mean_importance", ascending=False).reset_index(drop=True)

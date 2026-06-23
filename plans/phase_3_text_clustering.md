@@ -8,6 +8,30 @@ Bring news and topic information into the feature set and produce a first cut of
 - Google Cloud account with BigQuery enabled (free tier sufficient)
 - GPU helpful for embedding throughput but not required
 
+## As-built notes (updated 2026-06-23)
+
+The implementation in this repo diverges from the planning doc in a few
+deliberate places, all driven by the real GDELT scale (~48.5M filtered
+headlines after backfill):
+
+- **Default embedding model is `all-MiniLM-L6-v2` (384d)**, not mpnet (768d).
+  The storage and throughput win is decisive at our corpus size; cluster
+  quality on news-style text is essentially indistinguishable for our
+  scenario-discovery purpose.
+- **Embedding cache lives outside the repo folder**, at
+  `%LOCALAPPDATA%\metals\embeddings` on Windows (or
+  `~/.cache/metals/embeddings` on Unix), to avoid OneDrive trying to sync
+  tens of GB of cache files. `METALS_EMBEDDING_CACHE_DIR` env var overrides.
+- **Cache format is sharded Parquet**, not per-text `.npy` (4,096 shards by
+  first-3-hex of sha256(text), atomic writes via tmp+rename, fp16 on disk,
+  fp32 to callers).
+- **An eighth pipeline stage `label` was added** after `analyze` for
+  LLM-assisted cluster naming via the Anthropic API (default Haiku 4.5,
+  ~$1 for the full taxonomy). Gated on `ANTHROPIC_API_KEY` presence.
+- **End-to-end orchestration**: `scripts/phase3_pipeline.py` with stages
+  `gdelt -> embed -> aggregate -> topics -> context -> cluster -> analyze -> label`
+  and `--only` / `--resume-from` flags for chunked execution.
+
 ## Steps
 
 ### 3.1 GDELT BigQuery access
@@ -44,8 +68,9 @@ Build a parameterized SQL query that filters GKG records to these themes and exp
 - Store cleaned headlines in DuckDB `headlines` table: `(timestamp_utc, source, headline, themes JSON, article_url)`
 
 ### 3.6 Embedding model setup
-Default: `sentence-transformers/all-mpnet-base-v2` (768-dim, general purpose).
-Optional comparison: `yiyanghkust/finbert-tone` (financial domain).
+Default (as-built): `sentence-transformers/all-MiniLM-L6-v2` (384-dim).
+Alternative: `all-mpnet-base-v2` (768-dim, slightly better cluster fidelity but 2x storage and 5x slower).
+Selected MiniLM after the GDELT backfill confirmed 48.5M rows; storage and throughput became the binding constraint.
 
 `src/metals/features/embeddings.py`:
 - Batch encode headlines on GPU if available
@@ -109,11 +134,12 @@ Confirm your clusters identify (or contain) these well-known episodes:
 
 Missing several of these signals a problem with feature mix, not clustering.
 
-### 3.14 Persist cluster assignments
+### 3.14 Persist cluster assignments and labels
 - Per-date cluster label + assignment confidence
 - Cluster centroids
 - Cluster → human label mapping
 - Loader function that takes a new date's contextual vector and returns its nearest cluster — used in Phase 5
+- **LLM-assisted labeling**: `metals.eval.cluster_labeling` builds a per-cluster context bundle (representative dates, example headlines, dominant topics, mean forward returns) and calls Anthropic Haiku 4.5 to produce a short label + one-sentence description. Persisted with `label_source = 'llm:<confidence>'` so downstream analysis can filter by labelling provenance.
 
 ### 3.15 Document the cluster taxonomy
 `results/phase3_clusters.md`:

@@ -9,8 +9,8 @@ CRITICAL — Friday-close timestamp convention. The COT report is dated to
 market close (~3:30 PM ET). The "as-of" timestamp on every row in the
 ``positioning`` table must therefore be the **Friday release date**, not the
 Tuesday positioning date — using Tuesday is the canonical data-leakage bug
-in this field. We add three calendar days to the report date to map it to
-the Friday release.
+in this field. We map the Tuesday report date to its release date with
+``release_date`` below, which also accounts for federal-holiday delays.
 
 Source historical files:
     https://www.cftc.gov/files/dea/history/fut_disagg_txt_{YEAR}.zip
@@ -28,6 +28,8 @@ from datetime import datetime, timedelta, timezone
 
 import pandas as pd
 import requests
+from pandas.tseries.holiday import USFederalHolidayCalendar
+from pandas.tseries.offsets import CustomBusinessDay
 
 from metals.data.db import connection
 
@@ -47,6 +49,34 @@ METAL_NAME_PATTERNS: dict[str, str] = {
 
 # Tuesday positioning date -> Friday release. Three calendar days forward.
 TUE_TO_FRI_OFFSET = timedelta(days=3)
+
+# US federal-holiday-aware business-day machinery for the release-date calc.
+_US_CALENDAR = USFederalHolidayCalendar()
+_US_BDAY = CustomBusinessDay(calendar=_US_CALENDAR)
+
+
+def release_date(report_date: pd.Timestamp) -> pd.Timestamp:
+    """Map a COT *report* date (Tuesday positioning) to its *release* date.
+
+    The report is normally published the following Friday at 3:30 PM ET
+    (``report_date + 3``). When a US federal holiday falls in the report week,
+    the CFTC delays publication — Thanksgiving and July-4 weeks typically
+    release the following Monday. We approximate that by pushing the nominal
+    Friday one business day later per in-week federal holiday, then snapping to
+    the next business day. Erring *later* is the leakage-safe choice: we never
+    claim the data was available earlier than it actually was.
+
+    This is a heuristic, not the exact CFTC release calendar; for the rare
+    holiday weeks it errs at most a day late, which is conservative for any
+    downstream as-of join.
+    """
+    report_date = pd.Timestamp(report_date).normalize()
+    nominal_friday = report_date + TUE_TO_FRI_OFFSET
+    in_week_holidays = _US_CALENDAR.holidays(
+        report_date + pd.Timedelta(days=1), nominal_friday
+    )
+    delayed = nominal_friday + len(in_week_holidays) * _US_BDAY
+    return _US_BDAY.rollforward(delayed)
 
 
 def _download_year(year: int, timeout: int = 60) -> pd.DataFrame:
@@ -106,7 +136,11 @@ def parse_cot_dataframe(raw: pd.DataFrame, year_label: int | str = "?") -> pd.Da
             f"COT {year_label}: could not find Report_Date_as_YYYY-MM-DD column."
         )
     report_date = pd.to_datetime(df[date_col]).dt.tz_localize(None)
-    df["timestamp_utc"] = report_date + TUE_TO_FRI_OFFSET
+    # Holiday-aware release date. Compute once per unique report date (there are
+    # only ~weekly distinct dates) then map back, to avoid per-row calendar work.
+    unique_dates = report_date.dropna().drop_duplicates()
+    release_lookup = {d: release_date(d) for d in unique_dates}
+    df["timestamp_utc"] = report_date.map(release_lookup)
 
     rename = {
         "Prod_Merc_Positions_Long_All":  "producer_long",

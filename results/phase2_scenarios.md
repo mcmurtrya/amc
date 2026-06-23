@@ -37,6 +37,7 @@ The hawkish FOMC scenario is the only one that survives a multi-check robustness
 - **Placebo p-values at h=5**: Au 0.000, Ag 0.000, Pt 0.010, Pd 0.050. Random ±5–60-day offsets of the hawkish dates produce a near-zero placebo distribution; the real IRFs are far outside that distribution for the first three metals.
 - **Subsample at 2015**: Au, Ag, Pt all show stable-sign negative IRFs in both pre-2015 and post-2015 windows. Pre-2015 magnitudes are roughly 2-3× larger (QE-era forward-guidance leverage). **Palladium is the exception** — its hawkish response collapses to near zero post-2015, almost certainly because the 2018-22 supply squeeze dominated monetary signal.
 - **Alternative thresholds (gold)**: top quartile and top tercile produce near-identical IRFs. Top decile has the largest |point estimate| but smaller n events, so wider CIs.
+- **Control specification** (added 2026-06-18): the hawkish IRF is invariant to whether the macro controls (real yield, VIX, DXY change) are contemporaneous, lagged one day, or omitted entirely — within ~0.3% across all four metals, so the contemporaneous controls are not absorbing the effect. See `results/phase2_review.md` and notebook 05 section 4.
 
 **Economic interpretation.** Hawkish monetary surprises raise the real yield, which is the standard discount rate for the zero-yielding precious metals; they typically also strengthen the USD, raising the USD-denominated metal's price for non-USD buyers and depressing demand. Both channels point negative — exactly the observed sign. The h=10–20 peak and decay by h=60 is consistent with a slow repricing that doesn't compound indefinitely. **This is the cleanest Phase 2 result and the natural seed for Phase 5 triangulation.**
 
@@ -124,6 +125,7 @@ The hawkish FOMC scenario is the only one that survives a multi-check robustness
 ## Methodology notes
 
 - **Estimator**: `metals.models.lp.local_projection`. Per-horizon OLS of cumulative h-step-ahead log return on treatment + controls, Newey-West HAC standard errors with bandwidth h.
+- **Event-day return convention**: the cumulative LHS sums returns from t+1 to t+h, excluding the announcement-day close-to-close move. This is appropriate because the COMEX futures settlement (~1:30 PM ET) precedes the 2 PM FOMC announcement, so the reaction lands in r_{t+1}. The Phase 1 audit's ~0.89 futures/ETF close-to-close correlation corroborates the early-settlement timing.
 - **Sample window**: 2010-01-01 through latest available data. Bauer-Swanson surprises stop 2023-12-13, so FOMC scenarios use that as the right edge. GPR and DXY scenarios use through 2026-05-22.
 - **Tercile / threshold cutoffs**: computed within the modelling window. Modest in-sample data snooping; a clean holdout-based threshold is deferred to Phase 6.
 - **HAC bandwidth**: maxlags = h (Jordà's recommendation). Appropriate for the moving-average structure of the cumulative-return LHS.

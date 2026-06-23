@@ -55,6 +55,27 @@ Every subsequent `uv` command in the session inherits the variable, so the same
 project-local venv is reused. Do **not** set this user-scoped — that breaks
 other projects.
 
+## Maintenance
+
+### Reclaiming database space
+
+The `headlines` table (GDELT GKG, ~14M rows) dominates the DuckDB file. Migration
+005 drops a redundant per-row copy of the article URL from the schema, but DuckDB
+does **not** shrink the data file in place on `DROP COLUMN`. To actually reclaim
+the bytes, rebuild a densely-packed copy with `scripts/compact_headlines.py`:
+
+```bash
+# Dry run: writes data/processed/metals.duckdb.compact and reports bytes saved
+uv run python scripts/compact_headlines.py
+
+# Rebuild and swap in place (keeps a timestamped .bak alongside the original)
+uv run python scripts/compact_headlines.py --replace
+```
+
+The source database is opened read-only and every table's row count is verified
+before anything is swapped. Run this **locally** — a OneDrive-synced DB is too
+large to rebuild over a network mount.
+
 ## Project layout
 
 ```

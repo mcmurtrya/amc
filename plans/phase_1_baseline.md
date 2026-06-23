@@ -121,6 +121,30 @@ Same model, different targets. Compare metrics. Expect silver vol harder than go
 - LightGBM feature importance per model
 - Three things that surprised you, written before you re-tune
 
+
+## As-built notes (updated 2026-06-23)
+
+Three deviations from the original plan, all driven by what real data
+surfaced during execution:
+
+- **Credit-spread feature**: `BAMLH0A0HYM2` (ICE BofA US High Yield OAS) was
+  truncated by ICE Data Indices to a 3-year licensing window in April 2026,
+  leaving only ~2023-05 onward via the FRED public API. Substituted
+  `BAA10Y` (Moody's Baa - 10Y Treasury, FRBSTL-calculated, history to 1986).
+  The macro feature was renamed `baa_spread_chg_{h}d`. The FRED ingestion
+  module now runs a coverage audit on every refresh and warns loudly when
+  any series drops below 50% expected.
+- **Feature-importance pipeline**: `train_one_split` now captures booster
+  importances for both `gain` and `split` types, persisted to a new
+  `run_feature_importances` table. `aggregate_feature_importances` normalises
+  per-split to compare cross-split contribution fairly.
+- **Lean feature sets**: Phase 1's diagnostic
+  (`scripts/phase1_diagnose.py`, results in
+  `results/phase1_negative_ic_diagnosis.md`) found the cross-ticker
+  returns/vol block is net-negative for IC on every metal. Added `lean`
+  (drop entire block) and `lean_own` (keep only the target metal's own
+  returns/vol) configurations to `metals.models.lgbm_vol`.
+
 ## Deliverables
 - One-command data refresh from yfinance, FRED, GPR
 - DuckDB populated with prices and macro through current date

@@ -1,0 +1,365 @@
+"""Phase 3 end-to-end pipeline.
+
+Stages, in order:
+
+  1. ``gdelt``    — pull GDELT GKG rows for the date range, upsert to ``headlines``
+  2. ``embed``    — embed every cached headline with sentence-transformers
+  3. ``aggregate``— daily aggregation to per-(date, metal) text features
+  4. ``topics``   — fit BERTopic, persist, write per-day topic prevalences
+  5. ``context``  — assemble the daily contextual feature vector
+  6. ``cluster``  — fit UMAP + HDBSCAN, persist, write cluster assignments
+  7. ``analyze``  — produce cluster summary tables to ``results/phase3_*.csv``
+
+Each stage is independently runnable via ``--only`` or skippable from a
+chosen start point via ``--resume-from``. Heavy artifacts (the BERTopic
+model, the clustering pipeline pickle, embeddings cache) live under
+``data/processed/`` and persist across invocations.
+
+Run as:
+    uv run python scripts/phase3_pipeline.py --start 2015-02-18 --end 2026-05-12
+or chunked:
+    uv run python scripts/phase3_pipeline.py --only gdelt --start 2015-02-18 --end 2018-12-31
+"""
+
+from __future__ import annotations
+
+import argparse
+from datetime import date, datetime
+from pathlib import Path
+
+import numpy as np
+import pandas as pd
+
+STAGES = ("gdelt", "embed", "aggregate", "topics", "context", "cluster", "analyze", "label")
+
+
+def _print_stage(name: str) -> None:
+    print(f"\n=== {name.upper()} ===  ({datetime.now():%Y-%m-%d %H:%M:%S})")
+
+
+def run_gdelt(start: str, end: str) -> None:
+    _print_stage("gdelt")
+    from metals.data.gdelt import refresh
+    summary = refresh(start_date=start, end_date=end)
+    print(f"rows_written = {summary['rows_written']}")
+    print(f"date_range   = {summary.get('date_range')}")
+
+
+def run_embed() -> None:
+    _print_stage("embed")
+    from metals.data.db import connection
+    from metals.features.embeddings import embed_texts
+    with connection() as conn:
+        df = conn.execute(
+            "SELECT timestamp_utc, headline_id, document_identifier "
+            "FROM headlines ORDER BY timestamp_utc"
+        ).fetchdf()
+    print(f"headlines to embed = {len(df):,}")
+    # The embedding source is the URL since GDELT doesn't carry the headline
+    # text itself. Effectively a URL-based heuristic, but stable across runs.
+    _ = embed_texts(df["document_identifier"].astype(str).tolist())
+    print("embeddings cached.")
+
+
+def _load_embeddings_for(df: pd.DataFrame) -> np.ndarray:
+    """Helper: load already-cached embeddings for a frame of headlines."""
+    from metals.features.embeddings import embed_texts
+    return embed_texts(df["document_identifier"].astype(str).tolist())
+
+
+def run_aggregate() -> None:
+    _print_stage("aggregate")
+    from metals.data.db import connection
+    from metals.features.text_daily import aggregate_daily, upsert_daily
+
+    with connection() as conn:
+        hl = conn.execute(
+            "SELECT timestamp_utc, headline_id, source, themes, article_url, "
+            "document_identifier, tone_overall, tone_positive, tone_negative "
+            "FROM headlines ORDER BY timestamp_utc"
+        ).fetchdf()
+    if hl.empty:
+        print("no headlines to aggregate.")
+        return
+
+    from metals.features.text_daily import _parse_themes_field  # noqa: WPS437
+    hl["themes_list"] = hl["themes"].apply(_parse_themes_field)
+    hl["timestamp_utc"] = pd.to_datetime(hl["timestamp_utc"])
+
+    emb = _load_embeddings_for(hl)
+    print(f"loaded {len(emb):,} embeddings of dim {emb.shape[1] if emb.ndim == 2 else '?'}")
+
+    out = aggregate_daily(hl, embeddings=emb)
+    n = upsert_daily(out)
+    print(f"daily_text_features rows written = {n:,}")
+
+
+def run_topics(min_topic_size: int = 30, nr_topics: int | str | None = None) -> None:
+    _print_stage("topics")
+    from metals.data.db import connection
+    from metals.features.topics import (
+        TopicModelConfig,
+        assign_topics,
+        fit_topic_model,
+        save_topic_model,
+        topic_prevalence_per_day,
+        upsert_topic_prevalence,
+    )
+
+    with connection() as conn:
+        hl = conn.execute(
+            "SELECT timestamp_utc, document_identifier "
+            "FROM headlines ORDER BY timestamp_utc"
+        ).fetchdf()
+    if hl.empty:
+        print("no headlines for topic modelling.")
+        return
+
+    emb = _load_embeddings_for(hl)
+    docs = hl["document_identifier"].astype(str).tolist()
+    config = TopicModelConfig(min_topic_size=min_topic_size, nr_topics=nr_topics)
+    print(f"fitting BERTopic on {len(docs):,} documents (min_topic_size={min_topic_size})...")
+    model = fit_topic_model(docs, embeddings=emb, config=config)
+    print(f"saving topic model.")
+    save_topic_model(model, name="default")
+
+    topics = assign_topics(model, docs, embeddings=emb)
+    prev = topic_prevalence_per_day(hl["timestamp_utc"], topics, include_noise=False)
+    n = upsert_topic_prevalence(prev)
+    print(f"daily_topic_prevalence rows written = {n:,}")
+
+
+def run_context(target_metal: str) -> pd.DataFrame:
+    _print_stage("context")
+    from metals.features.context import ContextConfig, build_context
+    from metals.features.loaders import load_macro, load_prices
+    from metals.features.text_daily import load_daily as load_text_daily
+    from metals.features.topics import load_topic_prevalence_wide
+
+    prices = load_prices(column="adj_close")
+    macro = load_macro()
+    text = load_text_daily()
+    topics = load_topic_prevalence_wide()
+
+    if prices.empty or macro.empty:
+        raise RuntimeError("prices or macro empty — run Phase 1 ingestion first.")
+    ctx, artifacts = build_context(
+        prices=prices, macro_wide=macro, text_daily=text,
+        topic_prevalence=topics,
+        config=ContextConfig(target_metal=target_metal),
+    )
+    print(f"context shape = {ctx.shape}  cols includes "
+          f"{[c for c in ctx.columns[:6]]} ...")
+    return ctx
+
+
+def run_cluster(context: pd.DataFrame, train_until: str | None,
+                model_version: str | None = None) -> str:
+    _print_stage("cluster")
+    from metals.models.clustering import (
+        ClusteringConfig, assign_clusters, cluster_centroids, fit_clustering,
+        save_pipeline, upsert_assignments, upsert_centroids,
+    )
+
+    train = context.dropna()
+    if train_until:
+        train = train.loc[: pd.Timestamp(train_until)]
+    print(f"training rows = {len(train):,}  ({train.index.min()} → {train.index.max()})")
+
+    cfg = ClusteringConfig()
+    pipeline = fit_clustering(train, config=cfg, model_version=model_version)
+    save_pipeline(pipeline)
+
+    full = context.dropna()
+    assignments = assign_clusters(pipeline, full)
+    centroids = cluster_centroids(pipeline, train)
+    n_a = upsert_assignments(assignments, model_version=pipeline.model_version)
+    n_c = upsert_centroids(centroids, model_version=pipeline.model_version)
+    print(f"cluster_assignments rows = {n_a:,}, centroids = {n_c}")
+    return pipeline.model_version
+
+
+def run_analyze(model_version: str, target_metal: str = "gold") -> None:
+    _print_stage("analyze")
+    from metals.data.db import connection
+    from metals.eval.clusters import (
+        cluster_summary, forward_returns,
+    )
+    from metals.features.loaders import load_prices
+    from metals.features.topics import load_topic_prevalence_wide
+
+    with connection() as conn:
+        assignments = conn.execute(
+            "SELECT timestamp_utc, cluster_id, confidence "
+            "FROM cluster_assignments WHERE model_version = ? ORDER BY timestamp_utc",
+            [model_version],
+        ).fetchdf()
+    if assignments.empty:
+        print(f"no assignments for model_version={model_version!r}.")
+        return
+
+    prices = load_prices(column="adj_close")
+    fr = forward_returns(prices, horizons=(1, 5, 20, 60))
+    topics_wide = load_topic_prevalence_wide()
+
+    summary = cluster_summary(assignments, fr, topics_wide, horizons=(1, 5, 20, 60))
+
+    out_dir = Path("results")
+    out_dir.mkdir(parents=True, exist_ok=True)
+    for name, df in summary.items():
+        path = out_dir / f"phase3_{model_version}_{name}.csv"
+        df.to_csv(path, index=False)
+        print(f"wrote {path} ({len(df):,} rows)")
+
+
+def _today_iso() -> str:
+    return date.today().isoformat()
+
+
+
+def run_label(model_version: str, target_metal: str = "gold",
+              llm_model: str = "claude-haiku-4-5-20251001") -> None:
+    """Phase 3 step 3.12 / 3.14 LLM labelling stage. Gated on ANTHROPIC_API_KEY."""
+    _print_stage("label")
+    import os
+    if not os.getenv("ANTHROPIC_API_KEY"):
+        print("ANTHROPIC_API_KEY not set; skipping label stage.")
+        return
+
+    from metals.data.db import connection
+    from metals.eval.cluster_labeling import (
+        build_cluster_context, label_all_clusters, upsert_labels,
+    )
+    from metals.eval.clusters import (
+        cluster_forward_stats, dominant_topics, forward_returns,
+    )
+    from metals.features.loaders import load_prices
+    from metals.features.topics import load_topic_prevalence_wide
+
+    with connection() as conn:
+        assignments = conn.execute(
+            "SELECT timestamp_utc, cluster_id, confidence "
+            "FROM cluster_assignments WHERE model_version = ? ORDER BY timestamp_utc",
+            [model_version],
+        ).fetchdf()
+        headlines = conn.execute(
+            "SELECT timestamp_utc, document_identifier AS headline, "
+            "article_url FROM headlines"
+        ).fetchdf()
+    if assignments.empty:
+        print(f"no assignments for {model_version!r}; nothing to label.")
+        return
+
+    prices = load_prices(column="adj_close")
+    fr = forward_returns(prices, horizons=(1, 5, 20))
+    topics_wide = load_topic_prevalence_wide()
+    fwd_stats = cluster_forward_stats(assignments, fr, horizons=(1, 5, 20))
+    topics_per_cluster = dominant_topics(assignments, topics_wide, top_k=5)
+
+    cluster_ids = sorted(c for c in assignments["cluster_id"].unique() if c != -1)
+    contexts = [
+        build_cluster_context(
+            cluster_id=int(cid),
+            assignments=assignments,
+            headlines=headlines,
+            dominant_topics=topics_per_cluster,
+            forward_stats=fwd_stats,
+        )
+        for cid in cluster_ids
+    ]
+    print(f"labelling {len(contexts)} clusters via {llm_model}...")
+    labels = label_all_clusters(contexts, model=llm_model)
+    n = upsert_labels(labels, model_version=model_version)
+    print(f"upserted {n} cluster labels.")
+    for lbl in labels:
+        print(f"  cluster {lbl.cluster_id:>3d} [{lbl.confidence:>6s}]  "
+              f"{lbl.label}")
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
+    parser.add_argument("--start", default="2015-02-18", help="GDELT start date.")
+    parser.add_argument("--end", default=_today_iso(), help="GDELT end date.")
+    parser.add_argument("--target-metal", default="gold",
+                        choices=["gold", "silver", "platinum", "palladium"])
+    parser.add_argument("--train-until", default=None,
+                        help="ISO date; clustering trains on data up to this date.")
+    parser.add_argument("--min-topic-size", type=int, default=30)
+    parser.add_argument("--nr-topics", default=None,
+                        help="auto, an int, or None.")
+    parser.add_argument("--only", choices=STAGES, default=None,
+                        help="Run a single stage and exit.")
+    parser.add_argument("--resume-from", choices=STAGES, default=None,
+                        help="Skip stages before this one.")
+    parser.add_argument("--model-version", default=None,
+                        help="Override the auto-generated clustering version label.")
+    parser.add_argument("--llm-model", default="claude-haiku-4-5-20251001",
+                        help="Anthropic model id for the label stage.")
+    args = parser.parse_args()
+
+    nr_topics: int | str | None = args.nr_topics
+    if isinstance(nr_topics, str) and nr_topics.isdigit():
+        nr_topics = int(nr_topics)
+
+    if args.only is not None:
+        do = {args.only}
+    elif args.resume_from is not None:
+        idx = STAGES.index(args.resume_from)
+        do = set(STAGES[idx:])
+    else:
+        do = set(STAGES)
+
+    if "gdelt" in do:
+        run_gdelt(args.start, args.end)
+    if "embed" in do:
+        run_embed()
+    if "aggregate" in do:
+        run_aggregate()
+    if "topics" in do:
+        run_topics(min_topic_size=args.min_topic_size, nr_topics=nr_topics)
+
+    context = None
+    if "context" in do:
+        context = run_context(args.target_metal)
+
+    model_version = args.model_version
+    if "cluster" in do:
+        if context is None:
+            context = run_context(args.target_metal)
+        model_version = run_cluster(context, args.train_until,
+                                    model_version=model_version)
+
+    if "label" in do:
+        if model_version is None:
+            from metals.data.db import connection
+            with connection() as conn:
+                row = conn.execute(
+                    "SELECT model_version FROM cluster_assignments "
+                    "ORDER BY timestamp_utc DESC LIMIT 1"
+                ).fetchone()
+            model_version = row[0] if row else None
+        if model_version is None:
+            print("no model_version available for label stage; skipping.")
+        else:
+            run_label(model_version, target_metal=args.target_metal,
+                      llm_model=args.llm_model)
+
+    if "analyze" in do:
+        if model_version is None:
+            from metals.data.db import connection
+            with connection() as conn:
+                row = conn.execute(
+                    "SELECT model_version FROM cluster_assignments "
+                    "ORDER BY timestamp_utc DESC LIMIT 1"
+                ).fetchone()
+            model_version = row[0] if row else None
+        if model_version is None:
+            print("no model_version available for analyze; skipping.")
+        else:
+            run_analyze(model_version, target_metal=args.target_metal)
+
+    print("\ndone.")
+
+
+if __name__ == "__main__":
+    main()

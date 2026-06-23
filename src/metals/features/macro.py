@@ -30,7 +30,7 @@ def compute_macro_features(
       dxy_chg_{h}d, dxy_pctile_{rank_window}d
       vix_chg_{h}d, vix_pctile_{rank_window}d
       yield_curve_slope (DGS10 - DGS2), and its change
-      hy_oas_chg_{h}d
+      baa_spread_chg_{h}d
       gpr_chg_{h}d, gpr_pctile_{rank_window}d
     """
     df = macro_wide.copy()
@@ -45,7 +45,7 @@ def compute_macro_features(
         out[f"breakeven_5y_chg_{h}d"] = _safe(df, "T5YIE") - _safe(df, "T5YIE").shift(h)
         out[f"dxy_chg_{h}d"] = _safe(df, "DTWEXBGS") - _safe(df, "DTWEXBGS").shift(h)
         out[f"vix_chg_{h}d"] = _safe(df, "VIXCLS") - _safe(df, "VIXCLS").shift(h)
-        out[f"hy_oas_chg_{h}d"] = _safe(df, "BAMLH0A0HYM2") - _safe(df, "BAMLH0A0HYM2").shift(h)
+        out[f"baa_spread_chg_{h}d"] = _safe(df, "BAA10Y") - _safe(df, "BAA10Y").shift(h)
         out[f"gpr_chg_{h}d"] = _safe(df, "GPR_DAILY") - _safe(df, "GPR_DAILY").shift(h)
 
     # Yield curve slope and change

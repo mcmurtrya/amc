@@ -6,11 +6,12 @@ The Global Knowledge Graph stores one row per article with extracted themes,
 tone, persons/orgs/locations. We pull rows matching any of the themes in
 ``configs/gdelt_themes.yaml`` and write them to the ``headlines`` table.
 
-GDELT GKG has no "headline" field per se — only the article URL. We store
-the URL in both ``article_url`` and ``headline`` (the latter as a fallback
-that can later be enriched by scraping the URL slug or fetching the page
-title). The real Phase 3 signal is in ``themes`` + tone columns, not the
-literal headline string.
+GDELT GKG has no "headline" field per se — only the article URL, which we
+store once in ``article_url``. The real Phase 3 signal is in ``themes`` +
+tone columns, not a literal headline string. (Earlier revisions also kept a
+``headline`` column that was a byte-for-byte copy of ``article_url``; it was
+dropped in migration 005 to reclaim storage. If page-title enrichment is
+added later, give it its own column rather than re-aliasing the URL.)
 
 Run as:
     uv run python -m metals.data.gdelt --start 2024-01-01 --end 2024-01-31
@@ -36,7 +37,7 @@ from metals.data.db import connection
 
 load_dotenv()
 SOURCE_TAG = "gdelt_gkg"
-TABLE = "gdelt-bq.gdeltv2.gkg"
+TABLE = "gdelt-bq.gdeltv2.gkg_partitioned"
 THEMES_CONFIG = (
     Path(__file__).resolve().parents[3] / "configs" / "gdelt_themes.yaml"
 )
@@ -66,6 +67,11 @@ def build_query(
     # GKG `DATE` is YYYYMMDDhhmmss as INT64. Exclusive upper bound = end + 1 day.
     date_lo = int(sd.strftime("%Y%m%d")) * 1_000_000
     date_hi = int((ed + pd.Timedelta(days=1)).strftime("%Y%m%d")) * 1_000_000
+    # `_PARTITIONTIME` is the daily ingestion-time partition on `gkg_partitioned`.
+    # Filtering it (not DATE) is what actually prunes; without this, BQ scans the
+    # whole columns. Keep the DATE int filter for intra-day boundaries.
+    pt_lo = sd.strftime("%Y-%m-%d")
+    pt_hi = (ed + pd.Timedelta(days=1)).strftime("%Y-%m-%d")
 
     # Build a REGEXP_CONTAINS predicate that matches any of our themes.
     # Each theme can appear with an offset suffix (e.g. "COMMODITIES_GOLD,123"),
@@ -80,8 +86,10 @@ def build_query(
         V2Themes         AS v2themes,
         V2Tone           AS v2tone
     FROM `{TABLE}`
-    WHERE DATE >= {date_lo}
-      AND DATE < {date_hi}
+    WHERE _PARTITIONTIME >= TIMESTAMP("{pt_lo}")
+      AND _PARTITIONTIME <  TIMESTAMP("{pt_hi}")
+      AND DATE >= {date_lo}
+      AND DATE <  {date_hi}
       AND V2Themes IS NOT NULL
       AND REGEXP_CONTAINS(V2Themes, r"{pattern}")
     """.strip()
@@ -95,7 +103,7 @@ def parse_gkg_rows(raw: pd.DataFrame, themes_filter: list[str]) -> pd.DataFrame:
     """
     if raw.empty:
         return raw.assign(**{c: pd.Series(dtype="object") for c in (
-            "timestamp_utc", "headline_id", "source", "headline",
+            "timestamp_utc", "headline_id", "source",
             "themes", "article_url",
             "tone_overall", "tone_positive", "tone_negative",
             "tone_polarity", "tone_ard", "tone_sgrd",
@@ -148,7 +156,6 @@ def parse_gkg_rows(raw: pd.DataFrame, themes_filter: list[str]) -> pd.DataFrame:
 
     df["article_url"] = df["document_identifier"].astype("string")
     df["source"]      = df["source_common_name"].fillna("").astype("string")
-    df["headline"]    = df["article_url"]   # see module docstring
     # Stable id = source + URL hash. We use the URL itself for traceability;
     # collisions in the same timestamp are extremely unlikely.
     df["headline_id"] = (
@@ -161,7 +168,7 @@ def parse_gkg_rows(raw: pd.DataFrame, themes_filter: list[str]) -> pd.DataFrame:
     # narrowing to the output columns.
     df = df[df["themes_list"].map(bool)]
     out_cols = [
-        "timestamp_utc", "headline_id", "source", "headline",
+        "timestamp_utc", "headline_id", "source",
         "themes", "article_url",
         "tone_overall", "tone_positive", "tone_negative",
         "tone_polarity", "tone_ard", "tone_sgrd",
@@ -186,10 +193,11 @@ def fetch_gkg(start_date: date | str, end_date: date | str) -> pd.DataFrame:
     query = build_query(start_date, end_date, themes)
     client = bigquery.Client()
     job = client.query(query)
-    # Use the REST-based result iterator instead of the BigQuery Storage API.
-    # Storage API is faster but requires an extra role (bigquery.readsessions.create);
-    # our themed result sets are small enough that REST is fine.
-    raw = job.to_dataframe(create_bqstorage_client=False)
+    # Use the BigQuery Storage API for the download. Requires the
+    # `BigQuery Read Session User` role on the service account. The REST
+    # fallback path fails with ConnectionResetError on multi-hundred-K-row
+    # result sets — themed monthly GKG queries reliably exceed that.
+    raw = job.to_dataframe()
     return parse_gkg_rows(raw, themes)
 
 
@@ -201,19 +209,18 @@ def upsert_headlines(df: pd.DataFrame) -> int:
         conn.execute(
             """
             INSERT INTO headlines
-                (timestamp_utc, headline_id, source, headline, themes,
+                (timestamp_utc, headline_id, source, themes,
                  article_url,
                  tone_overall, tone_positive, tone_negative,
                  tone_polarity, tone_ard, tone_sgrd)
             SELECT
-                timestamp_utc, headline_id, source, headline, themes,
+                timestamp_utc, headline_id, source, themes,
                 article_url,
                 tone_overall, tone_positive, tone_negative,
                 tone_polarity, tone_ard, tone_sgrd
             FROM incoming_gkg
             ON CONFLICT (timestamp_utc, headline_id) DO UPDATE SET
                 source         = EXCLUDED.source,
-                headline       = EXCLUDED.headline,
                 themes         = EXCLUDED.themes,
                 article_url    = EXCLUDED.article_url,
                 tone_overall   = EXCLUDED.tone_overall,
@@ -231,22 +238,27 @@ def upsert_headlines(df: pd.DataFrame) -> int:
 def refresh(
     start_date: str,
     end_date: str,
-    chunk_months: int = 1,
+    chunk_days: int = 7,
 ) -> dict:
-    """Pull and upsert ``[start_date, end_date]`` in month-sized chunks."""
+    """Pull and upsert ``[start_date, end_date]`` in ``chunk_days``-sized chunks.
+
+    Weekly chunks (~225K rows each) reliably complete inside the BigQuery
+    result-download window even on the REST fallback; with the Storage API
+    enabled they're trivially fast.
+    """
     out_summary = {"chunks": [], "rows_written": 0}
     sd = pd.Timestamp(start_date).normalize()
     ed = pd.Timestamp(end_date).normalize()
     cur = sd
     while cur <= ed:
-        nxt = min(cur + pd.DateOffset(months=chunk_months) - pd.Timedelta(days=1), ed)
+        nxt = min(cur + pd.Timedelta(days=chunk_days - 1), ed)
         df = fetch_gkg(cur.date(), nxt.date())
         n = upsert_headlines(df)
         out_summary["chunks"].append({"start": cur.date().isoformat(),
                                       "end": nxt.date().isoformat(),
                                       "rows": n})
         out_summary["rows_written"] += n
-        print(f"  {cur.date()} -> {nxt.date()}: {n} rows")
+        print(f"  {cur.date()} -> {nxt.date()}: {n} rows", flush=True)
         cur = nxt + pd.Timedelta(days=1)
     return out_summary
 
@@ -255,9 +267,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Refresh GDELT GKG headlines.")
     parser.add_argument("--start", required=True, help="YYYY-MM-DD")
     parser.add_argument("--end",   required=True, help="YYYY-MM-DD")
-    parser.add_argument("--chunk-months", type=int, default=1)
+    parser.add_argument("--chunk-days", type=int, default=7,
+                        help="Days per BigQuery chunk (default 7).")
     args = parser.parse_args()
-    s = refresh(args.start, args.end, chunk_months=args.chunk_months)
+    s = refresh(args.start, args.end, chunk_days=args.chunk_days)
     print(f"\nTotal rows: {s['rows_written']}")
 
 

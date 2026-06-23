@@ -29,7 +29,7 @@ def _toy_macro(idx: pd.DatetimeIndex, seed: int = 4) -> pd.DataFrame:
             "T5YIE": 2.5 + rng.normal(0, 0.02, n).cumsum() * 0.005,
             "DTWEXBGS": 100 + rng.normal(0, 0.3, n).cumsum() * 0.05,
             "VIXCLS": 18 + rng.normal(0, 1.5, n),
-            "BAMLH0A0HYM2": 4.0 + rng.normal(0, 0.15, n),
+            "BAA10Y": 4.0 + rng.normal(0, 0.15, n),
             "GPR_DAILY": 100 + rng.normal(0, 25, n),
         },
         index=idx,

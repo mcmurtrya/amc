@@ -82,3 +82,19 @@ Each phase produces something usable on its own, so you can pause anywhere witho
 - Phase 0 feels tedious but the leakage and reproducibility scaffolding pays for itself many times over.
 - Phase 4 is the flashiest phase but often the least pedagogically valuable — financial ML is one of those fields where a tuned LightGBM beats most transformers in honest evaluations. Do it for learning, not because you expect it to dominate.
 - Phase 5 is where the actual research-grade insight lives. Don't skip it because it's the least visual.
+
+---
+
+## Status as of 2026-06-23
+
+| Phase | Status | Notes |
+|---|---|---|
+| 0 — Scoping and setup | Complete | DuckDB, eval harness, walk-forward CV |
+| 1 — Price + LightGBM baseline | Complete + cleanup | `BAA10Y` replaced license-restricted `BAMLH0A0HYM2`. Feature-importance pipeline added. Lean / lean_own feature sets reflect diagnostic finding that cross-ticker returns/vol block is net-negative for IC. |
+| 2 — Events + local projections | Complete | 176 FOMC events, Bauer-Swanson MPS_ORTH surprises, COT with Friday-close lag. Headline result: hawkish-FOMC IRF -1.5% on gold at h=5, sign-consistent across Au/Ag/Pt. |
+| 3 — Text + clustering | Code complete, GDELT backfill done (48.5M rows), embedding pass next | MiniLM-L6 default at fp16, chunked-Parquet cache outside OneDrive. 8-stage orchestrator with LLM-assisted labelling at the end. |
+| 4 — Multimodal transformer | Not started | Unblocked once Phase 3 lands clusters and topic prevalences. |
+| 5 — Causal ML + triangulation | Not started | Unblocked now against Phase 2 IRFs; folds in Phase 3 cluster scenarios later. |
+| 6 — Validation and writeup | Not started | Needs hold-out year frozen. |
+
+**Cumulative test count: 214 (212 pass, 2 skipped for optional UMAP/HDBSCAN/BERTopic deps).**

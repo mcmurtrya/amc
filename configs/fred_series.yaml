@@ -21,8 +21,12 @@ series:
   - { id: "T10YIE", name: breakeven_10y, freq: daily }
   - { id: "T5YIE",  name: breakeven_5y,  freq: daily }
 
-  # Credit spread proxy (HY OAS)
-  - { id: "BAMLH0A0HYM2", name: hy_oas, freq: daily }
+  # Credit spread proxy. BAA10Y replaces BAMLH0A0HYM2 because ICE Data
+  # Indices imposed a 3-year license window on FRED publication of the
+  # ICE BofA HY OAS in April 2026, leaving only ~2023-05-15 onward via
+  # the free FRED API. BAA10Y (Moody's Baa - 10Y Treasury) is daily,
+  # FRBSTL-published, freely available, and goes back to 1986.
+  - { id: "BAA10Y", name: baa_spread, freq: daily }
 
   # Fed balance sheet (weekly)
   - { id: "WALCL", name: fed_balance_sheet, freq: weekly }

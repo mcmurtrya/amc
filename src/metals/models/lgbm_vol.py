@@ -24,7 +24,11 @@ import numpy as np
 import pandas as pd
 
 from metals.eval.cv import Split, walk_forward_splits
-from metals.eval.harness import log_predictions, register_run
+from metals.eval.harness import (
+    log_feature_importances,
+    log_predictions,
+    register_run,
+)
 from metals.features.assemble import FeatureMatrix, build_feature_matrix
 from metals.features.loaders import load_macro, load_prices
 
@@ -41,6 +45,39 @@ DEFAULT_LGBM_PARAMS: dict[str, Any] = {
     "verbose": -1,
     "n_jobs": -1,
 }
+
+# Substrings identifying the price-history "returns and volatility" feature
+# block (log returns, realized vol, skew/kurt, max drawdown) across every
+# ticker in the panel. The Phase 1 diagnostic
+# (results/phase1_negative_ic_diagnosis.md) found this 108-feature block is
+# net-negative for IC on every metal, so the lean feature sets prune it.
+RETURNS_VOL_SUBSTRINGS: tuple[str, ...] = (
+    "_ret_", "_rvol_", "_skew_", "_kurt_", "_maxdd_",
+)
+
+FEATURE_SETS = ("full", "lean", "lean_own")
+
+
+def feature_columns(all_cols: list[str], feature_set: str, ticker: str) -> list[str]:
+    """Select feature columns for a named feature set.
+
+    - ``full``: every feature (the original production baseline).
+    - ``lean``: drop the entire returns-and-vol block, keeping only spreads +
+      macro. Matches the diagnostic's ``no_returns_and_vol`` configuration.
+    - ``lean_own``: drop other tickers' returns-and-vol but keep the *target*
+      metal's own returns/vol (vol clustering is a legitimate own-series signal).
+    """
+    rv = {c for c in all_cols if any(s in c for s in RETURNS_VOL_SUBSTRINGS)}
+    if feature_set == "full":
+        return list(all_cols)
+    if feature_set == "lean":
+        drop = rv
+    elif feature_set == "lean_own":
+        own = {c for c in rv if c.startswith(f"{ticker}_")}
+        drop = rv - own
+    else:
+        raise ValueError(f"Unknown feature_set {feature_set!r}; choose from {FEATURE_SETS}")
+    return [c for c in all_cols if c not in drop]
 
 
 @dataclass
@@ -61,11 +98,18 @@ def train_one_split(
     fm: FeatureMatrix,
     split: Split,
     params: dict[str, Any] | None = None,
-) -> tuple[pd.DataFrame, SplitResult]:
+) -> tuple[pd.DataFrame, SplitResult, dict[str, dict[str, float]]]:
     """Fit on split.train_idx, early-stop on val, predict on test.
 
-    Returns a predictions DataFrame ready for the eval harness and a
-    summary SplitResult.
+    Returns
+    -------
+    predictions : DataFrame
+        Per-row predictions and actuals, ready for the eval harness.
+    result : SplitResult
+        Summary metrics for the split.
+    importances : dict[importance_type, dict[feature_name, value]]
+        Booster importances by type. Keys: ``"gain"`` (sum of information gain)
+        and ``"split"`` (number of times each feature is used to split).
     """
     import lightgbm as lgb
 
@@ -97,7 +141,18 @@ def train_one_split(
         "prediction": preds,
         "actual": y_test.values,
     })
-    return pred_df, result
+
+    # Capture booster importances. feature_importances_ defaults to "split"
+    # count; booster_.feature_importance("gain") is the more meaningful
+    # information-gain measure. Map both onto our feature names.
+    feat_names = list(X_train.columns)
+    gain = model.booster_.feature_importance(importance_type="gain")
+    split_cnt = model.booster_.feature_importance(importance_type="split")
+    importances = {
+        "gain": {f: float(v) for f, v in zip(feat_names, gain)},
+        "split": {f: float(v) for f, v in zip(feat_names, split_cnt)},
+    }
+    return pred_df, result, importances
 
 
 def run(
@@ -110,6 +165,7 @@ def run(
     test_days: int = 180,
     step_days: int = 180,
     min_train_days: int = 5 * 365,
+    feature_set: str = "full",
     notes: str | None = None,
 ) -> str:
     """End-to-end training run. Returns the eval-harness run_id."""
@@ -134,7 +190,22 @@ def run(
         realized_vol_window=realized_vol_window,
     )
 
-    run_name = f"lgbm_{ticker}_{target_kind}_h{target_horizon}_{datetime.now():%Y%m%d_%H%M}"
+    if feature_set not in FEATURE_SETS:
+        raise ValueError(f"Unknown feature_set {feature_set!r}; choose from {FEATURE_SETS}")
+    if feature_set != "full":
+        cols = feature_columns(list(fm.feature_names), feature_set, ticker)
+        fm = FeatureMatrix(
+            X=fm.X[cols],
+            y=fm.y,
+            target_name=fm.target_name,
+            target_horizon=fm.target_horizon,
+            feature_names=cols,
+        )
+
+    run_name = (
+        f"lgbm_{ticker}_{target_kind}_h{target_horizon}_{feature_set}_"
+        f"{datetime.now():%Y%m%d_%H%M}"
+    )
     run_id = register_run(
         name=run_name,
         model_type="lgbm_vol",
@@ -149,6 +220,7 @@ def run(
             "test_days": test_days,
             "step_days": step_days,
             "min_train_days": min_train_days,
+            "feature_set": feature_set,
             "lgbm_params": DEFAULT_LGBM_PARAMS,
             "n_features": len(fm.feature_names),
         },
@@ -171,8 +243,11 @@ def run(
 
     summaries: list[SplitResult] = []
     for split in splits:
-        pred_df, result = train_one_split(fm, split)
+        pred_df, result, importances = train_one_split(fm, split)
         log_predictions(run_id, pred_df)
+        for imp_type, imp_dict in importances.items():
+            log_feature_importances(run_id, split.split_id, imp_dict,
+                                    importance_type=imp_type)
         summaries.append(result)
         print(f"split {result.split_id:>2d}  "
               f"n={result.n_test:>4d}  rmse={result.rmse:.4f}  ic={result.ic:+.3f}")
@@ -192,6 +267,9 @@ def main() -> None:
     parser.add_argument("--horizon", type=int, default=5)
     parser.add_argument("--vol-window", type=int, default=20)
     parser.add_argument("--train-start", default="2010-01-01")
+    parser.add_argument("--feature-set", default="full", choices=list(FEATURE_SETS),
+                        help="full | lean (drop returns+vol block) | "
+                             "lean_own (keep only the target metal's own returns/vol)")
     parser.add_argument("--notes", default=None)
     args = parser.parse_args()
 
@@ -201,6 +279,7 @@ def main() -> None:
         target_horizon=args.horizon,
         realized_vol_window=args.vol_window,
         train_start=args.train_start,
+        feature_set=args.feature_set,
         notes=args.notes,
     )
 
