@@ -28,10 +28,10 @@ uv run ruff format src tests                      # format
 uv run mypy                                        # type-check (files = src/metals)
 ```
 
-Test baseline: **214 tests, all pass** after `uv sync --extra dev`. `umap-learn`,
+Test baseline: **241 tests, all pass** after `uv sync --extra dev`. `umap-learn`,
 `hdbscan`, and `bertopic` are **core** dependencies, so the two `importorskip`-gated
 clustering/topic tests **run** (not skip) in a complete install — a green run is
-**214 passed / 0 skipped** (~20 min; the UMAP/HDBSCAN tests dominate). You only see
+**241 passed / 0 skipped** (~9-20 min; the UMAP/HDBSCAN tests dominate). You only see
 "2 skipped" in a degraded env where those heavy deps failed to import. Note: bare
 `uv run pytest` needs the dev extras synced first (`uv sync --extra dev`), otherwise
 it falls back to a non-venv `pytest` that can't import `duckdb` (13 collection errors).

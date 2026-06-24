@@ -94,7 +94,7 @@ Each phase produces something usable on its own, so you can pause anywhere witho
 | 2 — Events + local projections | Complete | 176 FOMC events, Bauer-Swanson MPS_ORTH surprises, COT with Friday-close lag. Headline result: hawkish-FOMC IRF -1.5% on gold at h=5, sign-consistent across Au/Ag/Pt. |
 | 3 — Text + clustering | Code complete; GDELT backfill done (63.3M rows); DuckDB migrated to WSL + verified intact; embedding pass next | MiniLM-L6 default at fp16, chunked-Parquet cache outside OneDrive. 8-stage orchestrator with LLM-assisted labelling at the end. |
 | 4 — Multimodal transformer | Not started | Unblocked once Phase 3 lands clusters and topic prevalences. |
-| 5 — Causal ML + triangulation | Not started | Unblocked now against Phase 2 IRFs; folds in Phase 3 cluster scenarios later. |
+| 5 — Causal ML + triangulation | In progress — causal scaffolding (5.1-5.4) built | `configs/scenarios.yaml` registry + `features.scenarios` treatment builder + `models.causal` (DoubleML ATE / placebo / CATE) + 3 read loaders + 27 tests. SVAR (5.5, Bayesian NIW bands) + triangulation (5.6-5.9) next. |
 | 6 — Validation and writeup | Not started | Needs hold-out year frozen. |
 
-**Cumulative test count: 214 — all pass after `uv sync --extra dev`. UMAP/HDBSCAN/BERTopic are core deps, so the `importorskip`-gated tests run rather than skip: 214 passed / 0 skipped (~20 min).**
+**Cumulative test count: 241 — all pass after `uv sync --extra dev`. UMAP/HDBSCAN/BERTopic are core deps, so the `importorskip`-gated tests run rather than skip: 241 passed / 0 skipped (~9-20 min). (+27 from Phase 5 causal scaffolding.)**

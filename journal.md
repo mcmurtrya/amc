@@ -667,3 +667,72 @@ A running log of work, learnings, surprises, and open questions. Add an entry at
 
 - Either kick off the embed pass (background, GPU) and build Phase 5 scaffolding (CPU)
   in parallel, or do them in sequence. Both are now fully unblocked with the DB in place.
+
+---
+
+## 2026-06-23 (Phase 5 — causal scaffolding, steps 5.1-5.4)
+
+### What I did
+
+- **configs/scenarios.yaml** — the Phase 5 scenario registry (5.1). Migrated the
+  five inline Phase 2 event scenarios into a reproducible YAML: hawkish/dovish
+  FOMC (MPS_ORTH in-window terciles), gpr_spike (GPR 1-day diff > 95th pct),
+  dxy_up/down (DTWEXBGS 5-day pct_change beyond +/- 2 sigma). CPI/NFP listed as
+  available: false (no consensus ingestion). Added a config.scenarios() loader.
+- **metals.features.scenarios** — lifted the notebook treatment logic into pure,
+  tested functions: ScenarioSpec/ScenarioConfig + YAML parse, the roll-FORWARD
+  event->trading-day aligner (the duplicated notebook loop), build_treatment
+  (two paths: sparse FOMC events vs daily macro), build_confounders (Phase 2
+  control set: ret_5d_lag, rvol_20d_lag, dxy_5d_chg, vix, real_yield) with the
+  exclude-own-driver rule. Thresholds fit in-window; treatment active in-window
+  only.
+- **metals.features.loaders** — added the three missing read loaders:
+  load_fomc_surprises, load_events, load_positioning (preserving the Friday COT
+  release date; lowercase metal->ticker map lives in scenarios.py).
+- **metals.models.causal** — DoubleML estimator (5.2-5.4): estimate_ate
+  (DoubleMLIRM, LGBM g+m, K-fold, doubly-robust ATE + 95% CI), placebo_pvalue
+  (random +/- [5,60]d offsets), estimate_cate (econml CausalForestDML),
+  estimate_scenarios (pure; builds the (scenario, metal, horizon) ATE table) and
+  a run() orchestrator that writes data/processed/double_ml_ates.parquet and
+  registers a 'causal' run with the harness. Outcome reuses
+  lp.cumulative_log_returns so DoubleML and the Phase 2 LP share one outcome def.
+- **27 new tests** (test_features_loaders / test_features_scenarios /
+  test_models_causal). The causal tests recover a planted ATE under confounding
+  (where a naive mean-diff is biased), check the zero-effect CI, the in-window
+  threshold rule, roll-forward alignment, and the placebo/CATE/table shapes. All
+  27 pass; doubleml/lightgbm/econml gated by importorskip.
+
+### What I learned
+
+- doubleml 0.11.3: DoubleMLData.from_arrays(x, y, d) + DoubleMLIRM(data, ml_g,
+  ml_m, n_folds, score="ATE"); after .fit(): .coef / .se / .confint(level=).
+- A DatetimeIndex comparison (index >= ts) already returns a numpy bool array, so
+  no .to_numpy() on it (cost one round of red tests).
+- DoubleML draws its cross-fitting split off the numpy global RNG, so
+  np.random.seed(seed) inside estimate_ate is needed for reproducibility
+  alongside the learner random_state.
+
+### Decisions
+
+- Per the user: when the SVAR is built (deferred), its IRF bands use a **Bayesian
+  Normal-inverse-Wishart posterior** over the reduced-form VAR (not frequentist
+  rotation-only bands). Recorded in plans/phase_5_causal_ml_triangulation.md 5.5.
+- Scope this pass: causal-first (5.1-5.4). SVAR (5.5) and triangulation/master
+  table (5.6-5.9) deferred to a later pass.
+
+### Open items not resolved today
+
+- metals.models.svar (sign-restricted SVAR with NIW bands) not built.
+- eval/triangulation (agreement / cross-metal consistency / subsample stability
+  scores, scenario_master.parquet) not built.
+- Real-data run of metals.models.causal.run() not executed — it's CPU-fine and
+  the 23.8 GB DB is now present, so it CAN run locally; left as a compute step.
+- COT positioning confounders (net managed-money, 4-wk change, 1-yr pctile) not
+  yet folded into build_confounders (the loader exists now).
+- CPI / NFP / ECB / BoE scenarios still need consensus/surprise ingestion.
+
+### Next session
+
+- Build metals.models.svar (Rubio-Ramirez + NIW posterior bands) and
+  eval/triangulation; then run causal.run() on the real DB and compare the ATE
+  table + placebo p-values against the Phase 2 IRFs.

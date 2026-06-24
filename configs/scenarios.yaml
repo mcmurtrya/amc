@@ -1,0 +1,51 @@
+# Phase 5 scenario registry (plan step 5.1).
+# Read by src/metals/features/scenarios.py and src/metals/models/causal.py.
+#
+# Each scenario defines a binary treatment indicator T_t built from a source
+# series/table by a thresholding rule, an outcome Y_{t+h} (cumulative log
+# return), and a confounder set X_t. Migrated verbatim from the inline Phase 2
+# definitions in notebooks 03/04 so DoubleML and the Phase 2 local projections
+# share identical treatment dates.
+#
+# source         "<table>:<field>" — table in {fomc_surprises, macro, events}.
+# transform      level | diff | pct_change   (diff/pct_change use `periods`).
+# rule           tercile_high | tercile_low  driver beyond the in-window upper/
+#                                            lower tercile (quantile 2/3, 1/3)
+#                pct_high                     driver above the `pct` quantile
+#                sigma_high | sigma_low       driver beyond +/- `k` * in-window
+#                                            std (centred at zero, per Phase 2)
+#
+# All thresholds are computed in-window (rows >= modelling.window_start), the
+# same modest in-sample convention as Phase 2; a holdout fit is deferred to
+# Phase 6. Event treatments (sparse FOMC dates) are rolled FORWARD to the next
+# trading day; daily macro treatments are evaluated directly on trading days.
+
+modelling:
+  window_start: "2010-01-01"
+  horizons: [1, 5, 20]
+
+scenarios:
+  # --- Monetary policy: Bauer-Swanson MPS_ORTH (orthogonalised, + = hawkish) ---
+  - { id: hawkish_fomc, name: "Hawkish FOMC surprise", definition_type: event, economic_family: monetary, available: true, source: "fomc_surprises:mps_orth", transform: level, rule: tercile_high }
+  - { id: dovish_fomc,  name: "Dovish FOMC surprise",  definition_type: event, economic_family: monetary, available: true, source: "fomc_surprises:mps_orth", transform: level, rule: tercile_low }
+
+  # --- Geopolitical risk: GPR daily index, 1-day jump in the top 5% ---
+  - { id: gpr_spike, name: "Geopolitical risk spike", definition_type: event, economic_family: geopolitical, available: true, source: "macro:GPR_DAILY", transform: diff, periods: 1, rule: pct_high, pct: 0.95 }
+
+  # --- USD shocks: broad dollar index, 5-day move beyond +/- 2 sigma ---
+  - { id: dxy_up_shock,   name: "USD up shock",   definition_type: event, economic_family: usd, available: true, source: "macro:DTWEXBGS", transform: pct_change, periods: 5, rule: sigma_high, k: 2.0 }
+  - { id: dxy_down_shock, name: "USD down shock", definition_type: event, economic_family: usd, available: true, source: "macro:DTWEXBGS", transform: pct_change, periods: 5, rule: sigma_low,  k: 2.0 }
+
+  # --- Not yet available: no consensus/surprise ingestion exists (plan 5.1).
+  #     Listed for completeness; the builder skips available: false scenarios.
+  - { id: cpi_upside,   name: "CPI upside surprise",   definition_type: event, economic_family: monetary, available: false, source: "events:CPI", transform: level, rule: tercile_high }
+  - { id: cpi_downside, name: "CPI downside surprise", definition_type: event, economic_family: monetary, available: false, source: "events:CPI", transform: level, rule: tercile_low }
+  - { id: nfp_upside,   name: "NFP upside surprise",   definition_type: event, economic_family: macro,    available: false, source: "events:NFP", transform: level, rule: tercile_high }
+  - { id: nfp_downside, name: "NFP downside surprise", definition_type: event, economic_family: macro,    available: false, source: "events:NFP", transform: level, rule: tercile_low }
+
+# Cluster-defined scenarios (Phase 3/4) are appended programmatically once the
+# clustering pipeline produces labelled clusters; none are listed yet.
+
+date_range:
+  start: "2010-01-01"
+  end: null
