@@ -607,3 +607,63 @@ A running log of work, learnings, surprises, and open questions. Add an entry at
 ### Next session
 
 - You run `--only embed` against the 48.5M-headline corpus. Estimated runtime 3–5 h on a 4090, ~37 GB cache landing in `%LOCALAPPDATA%\metals\embeddings`. Then aggregate → topics → cluster → analyze → label in one evening.
+
+---
+
+## 2026-06-23 (DB migration verified + hygiene/doc pass)
+
+### What I did
+
+- **Verified the `metals.duckdb` transfer to WSL landed intact.** 23.84 GB at
+  `data/processed/metals.duckdb`, byte-exact with the OneDrive backup copy, no `.wal`
+  sibling (clean shutdown), opens read-only with all 10 tables counting cleanly. Key
+  counts: `headlines` 63,267,343, `prices` 56,256, `macro` 65,646, `positioning` 3,420,
+  `fomc_surprises` 354, `events` 176, plus the lazily-created harness tables (`runs` 33,
+  `run_predictions` 86,526, `run_feature_importances` 99,968) and `_schema_migrations` 5.
+  Not truncated, not corrupted.
+- **Ran a 5-agent state-mapping pass** to find natural continuation points. Confirmed
+  Phase 3 code is complete (no stubs; all 8 pipeline stages resolve to real modules),
+  Phase 5 deps are all installed and a DoubleMLPLR smoke test recovered a planted ATE,
+  and Phase 2 IRFs exist only as PNGs + hand-typed tables (treatment logic still inline
+  in notebooks 02-05).
+- **Hygiene + docs:**
+  - `uv sync --extra dev` — dev extras (pytest etc.) were never synced, so bare
+    `uv run pytest` fell back to a non-venv pytest that couldn't import duckdb (13
+    collection errors). Now collects 214 tests in-venv.
+  - Corrected the stale **48.5M -> 63.3M** headline count and **~37 GB -> ~48 GB** cache
+    estimate across CLAUDE.md, the roadmap, and the Phase 3 plan.
+  - Fixed the test-baseline docs: UMAP/HDBSCAN/BERTopic are *core* deps, so a full
+    install runs all 214 (214 passed / 0 skipped), not 212/2 — the importorskip guards
+    only trip in a degraded env.
+  - Fixed the stale embeddings cache path in the Phase 3 plan
+    (`data/processed/embeddings/{date}.parquet` -> `~/.cache/metals/embeddings` sharded).
+  - Removed the byte-identical `claude.md` case-collision duplicate; kept `CLAUDE.md`.
+
+### What I learned
+
+- The "48.5M-row backfill" in the docs was stale — the actual corpus is **63.3M rows**,
+  which rescales the embed cache to ~48 GB and the runtime upward (especially on the 6 GB
+  A1000, not the 4090 the old estimate assumed).
+- The harness tables survived the DuckDB migration intact, so the Phase 1/2 evaluation
+  history (33 runs) is preserved — no need to re-run baselines.
+
+### What confused me
+
+- My state-mapping workflow initially reported "no DuckDB exists" — a timing artifact:
+  the readers checked the filesystem while the 23.8 GB DB was still being copied into WSL.
+  It landed mid-run.
+
+### Open items not resolved today
+
+- Embed pass not yet run (GPU, ~48 GB, ~6-12 h on the A1000). `gdelt` stage no longer
+  needed — `headlines` is populated.
+- Phase 5 modules (`metals.models.causal`, `metals.models.svar`) still not written; the
+  treatment-builder refactor (lift notebook logic into `configs/scenarios.yaml` + a
+  module) is still pending.
+- Kitco RSS supplement (3.4), language/per-metal relevance filter, and the regime
+  sanity-check (3.13) still deferred.
+
+### Next session
+
+- Either kick off the embed pass (background, GPU) and build Phase 5 scaffolding (CPU)
+  in parallel, or do them in sequence. Both are now fully unblocked with the DB in place.

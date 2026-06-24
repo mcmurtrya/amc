@@ -92,9 +92,9 @@ Each phase produces something usable on its own, so you can pause anywhere witho
 | 0 — Scoping and setup | Complete | DuckDB, eval harness, walk-forward CV |
 | 1 — Price + LightGBM baseline | Complete + cleanup | `BAA10Y` replaced license-restricted `BAMLH0A0HYM2`. Feature-importance pipeline added. Lean / lean_own feature sets reflect diagnostic finding that cross-ticker returns/vol block is net-negative for IC. |
 | 2 — Events + local projections | Complete | 176 FOMC events, Bauer-Swanson MPS_ORTH surprises, COT with Friday-close lag. Headline result: hawkish-FOMC IRF -1.5% on gold at h=5, sign-consistent across Au/Ag/Pt. |
-| 3 — Text + clustering | Code complete, GDELT backfill done (48.5M rows), embedding pass next | MiniLM-L6 default at fp16, chunked-Parquet cache outside OneDrive. 8-stage orchestrator with LLM-assisted labelling at the end. |
+| 3 — Text + clustering | Code complete; GDELT backfill done (63.3M rows); DuckDB migrated to WSL + verified intact; embedding pass next | MiniLM-L6 default at fp16, chunked-Parquet cache outside OneDrive. 8-stage orchestrator with LLM-assisted labelling at the end. |
 | 4 — Multimodal transformer | Not started | Unblocked once Phase 3 lands clusters and topic prevalences. |
 | 5 — Causal ML + triangulation | Not started | Unblocked now against Phase 2 IRFs; folds in Phase 3 cluster scenarios later. |
 | 6 — Validation and writeup | Not started | Needs hold-out year frozen. |
 
-**Cumulative test count: 214 (212 pass, 2 skipped for optional UMAP/HDBSCAN/BERTopic deps).**
+**Cumulative test count: 214 — all pass after `uv sync --extra dev`. UMAP/HDBSCAN/BERTopic are core deps, so the `importorskip`-gated tests run rather than skip: 214 passed / 0 skipped (~20 min).**
