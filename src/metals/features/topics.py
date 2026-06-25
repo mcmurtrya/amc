@@ -25,6 +25,114 @@ MODEL_DIR = (
     Path(__file__).resolve().parents[3] / "data" / "processed" / "topic_models"
 )
 
+# ---------------------------------------------------------------------------
+# Themes-via-SQL topic prevalence (Phase 3 default).
+#
+# GDELT GKG already ships a curated, body-derived theme taxonomy, so per-day
+# "topic prevalence" can be computed as a streaming DuckDB GROUP BY over the
+# ``themes`` column — no embeddings, no UMAP/HDBSCAN, deterministic, and
+# tractable on the full 63 M-row corpus (BERTopic over 63 M docs is not). The
+# output lands in the same ``daily_topic_prevalence`` table the BERTopic path
+# used, so ``load_topic_prevalence_wide`` / context / clustering are unchanged.
+#
+# ``TOPIC_THEMES`` is the FIXED, ordered curated theme set (mirrors
+# configs/gdelt_themes.yaml). topic_id == index here, so the persisted ids are
+# stable across runs and independent of any reordering of the source config.
+# ---------------------------------------------------------------------------
+TOPIC_THEMES: tuple[str, ...] = (
+    "ECON_CENTRALBANK",
+    "WB_1235_CENTRAL_BANKS",
+    "EPU_POLICY_MONETARY_POLICY",
+    "WB_444_MONETARY_POLICY",
+    "ECON_INTEREST_RATES",
+    "EPU_POLICY_INTEREST_RATES",
+    "WB_1125_INTEREST_RATE_POLICY",
+    "ECON_INFLATION",
+    "WB_442_INFLATION",
+    "ECON_GOLDPRICE",
+    "WB_1164_COMMODITY_PRICES_SHOCKS",
+    "WB_1699_METAL_ORE_MINING",
+    "SANCTIONS",
+    "ECON_TRADE_DISPUTE",
+)
+
+
+def theme_topic_map() -> dict[str, int]:
+    """Stable ``theme code -> topic_id`` mapping (topic_id == index)."""
+    return {theme: i for i, theme in enumerate(TOPIC_THEMES)}
+
+
+def compute_theme_prevalence(
+    conn=None,
+    start: str | pd.Timestamp | None = None,
+    end: str | pd.Timestamp | None = None,
+) -> pd.DataFrame:
+    """Per-day theme prevalence straight from GDELT GKG ``themes``.
+
+    ``prevalence(theme, day) = (# articles that day tagged with theme) /
+    (# articles that day)``. Multi-label, so a day's prevalences need not sum
+    to 1. Returns long-format ``(timestamp_utc, topic_id, prevalence)`` ready
+    for :func:`upsert_topic_prevalence`. Runs as a single streaming DuckDB
+    aggregation (constant memory, no embeddings/GPU).
+
+    Pass ``conn`` to query an existing connection (used in tests); otherwise a
+    read-only connection to the canonical store is opened.
+    """
+    tmap = theme_topic_map()
+    themes_in = ", ".join(f"'{t}'" for t in TOPIC_THEMES)
+
+    # The same optional date filter is applied in both the per_day and exploded
+    # CTEs, so its bind params appear twice, in that order.
+    date_filter = ""
+    date_params: list = []
+    if start is not None:
+        date_filter += " AND timestamp_utc >= ?"
+        date_params.append(str(pd.Timestamp(start)))
+    if end is not None:
+        end_ts = pd.Timestamp(end)
+        if end_ts == end_ts.normalize():  # bare date -> include the whole day
+            end_ts = end_ts + pd.Timedelta(days=1) - pd.Timedelta(microseconds=1)
+        date_filter += " AND timestamp_utc <= ?"
+        date_params.append(str(end_ts))
+
+    query = f"""
+        WITH per_day AS (
+            SELECT date_trunc('day', timestamp_utc) AS d, count(*) AS day_total
+            FROM headlines
+            WHERE 1=1{date_filter}
+            GROUP BY 1
+        ),
+        exploded AS (
+            SELECT date_trunc('day', timestamp_utc) AS d,
+                   unnest(from_json(themes, '["VARCHAR"]')) AS theme
+            FROM headlines
+            WHERE themes IS NOT NULL AND json_array_length(themes) > 0{date_filter}
+        ),
+        theme_day AS (
+            SELECT d, theme, count(*) AS n
+            FROM exploded
+            WHERE theme IN ({themes_in})
+            GROUP BY d, theme
+        )
+        SELECT td.d AS timestamp_utc, td.theme AS theme,
+               td.n::DOUBLE / pd.day_total AS prevalence
+        FROM theme_day td JOIN per_day pd USING (d)
+        ORDER BY td.d, td.theme
+    """
+    params = date_params + date_params  # per_day CTE, then exploded CTE
+
+    if conn is not None:
+        df = conn.execute(query, params).fetchdf()
+    else:
+        from metals.data.db import connection
+        with connection(read_only=True) as c:
+            df = c.execute(query, params).fetchdf()
+    if df.empty:
+        return pd.DataFrame(columns=["timestamp_utc", "topic_id", "prevalence"])
+    df["topic_id"] = df["theme"].map(tmap).astype(int)
+    df["timestamp_utc"] = pd.to_datetime(df["timestamp_utc"])
+    return df[["timestamp_utc", "topic_id", "prevalence"]]
+
 
 @dataclass(frozen=True)
 class TopicModelConfig:

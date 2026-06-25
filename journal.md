@@ -607,3 +607,63 @@ A running log of work, learnings, surprises, and open questions. Add an entry at
 ### Next session
 
 - You run `--only embed` against the 48.5M-headline corpus. Estimated runtime 3–5 h on a 4090, ~37 GB cache landing in `%LOCALAPPDATA%\metals\embeddings`. Then aggregate → topics → cluster → analyze → label in one evening.
+
+---
+
+## 2026-06-25 (Phase 3 — server verification + streaming/themes redesign)
+
+### Context
+Now on a Linux server (4 cores, 32 GB RAM, RTX A6000 48 GB, CUDA 13). The repo
+was built on Windows + a 4090 + OneDrive. Task: verify training won't break
+here, then fix the Phase 3 pipeline.
+
+### What I did
+- **Verified the environment** (multi-agent workflow). Env builds on Py 3.11,
+  torch 2.12.0+cu130 sees the A6000, GPU matmul + MiniLM encode work, all heavy
+  deps import, OS-portability clean (`db_path`/`resolve_cache_dir` resolve to
+  Linux paths), and Phase 1 LightGBM trains end-to-end (harness runs 34-35).
+- **Migrations**: `005_phase3_artifacts` had never been applied (two files share
+  the `005` prefix; the runner keys idempotency on the full filename stem, so
+  both are tracked independently — phase3_artifacts had simply not run). Applied
+  it; the four Phase 3 tables now exist.
+- **Found three escalating Phase 3 break points and fixed them:**
+  1. *Immediate crash*: `run_embed/aggregate/topics` all `SELECT
+     document_identifier`, a column migration 005 dropped. The live URL column
+     is `article_url`. Fixed 7 refs; added `scripts/phase3_smoke.py` to
+     bind-check stage queries against the live schema (would have caught this
+     before a multi-hour run).
+  2. *OOM*: `embed_texts` materialized the whole 63.3 M-row corpus
+     (`np.vstack` ~97 GB; confirmed adversarially). Added streaming
+     `cache_embeddings()` (no vstack) and rewrote `run_embed`/`run_aggregate`
+     to process one calendar month at a time. Months align to day boundaries,
+     so per-chunk daily aggregates concatenate losslessly (locked by a test).
+  3. *BERTopic intractable* over 63 M docs on 4 cores. Replaced with
+     **themes-via-SQL** (`topics.compute_theme_prevalence`): a streaming DuckDB
+     GROUP BY over the curated GDELT theme set, writing the same
+     `daily_topic_prevalence` table via a stable `theme->topic_id` map. **Ran
+     over the full 63.3 M corpus in 8 s** (30,079 prevalences / 2,315 days /
+     14 themes). BERTopic kept as optional `--topics-method bertopic` (sample-
+     bounded so it can't OOM).
+- **Perf fix**: the hash-sharded embedding cache is slow for bulk sequential
+  reads — 51.7 s for 24k cache *hits* (~4,000 tiny Parquet opens) vs ~9 s to
+  re-encode. So `run_aggregate` now encodes on the fly (`use_cache=False`):
+  faster AND drops the 48 GB disk requirement. The `embed` stage is now optional
+  (pre-warm for bertopic/Phase 4 only).
+- 227 tests pass (+13 new). ruff clean on touched code.
+
+### What I learned
+- Dispersion has a closed form for L2-normalized embeddings: `1 - ||mean(e_i)||`,
+  so it needs only a running sum — fully streamable (aggregate_daily already
+  computes the equivalent).
+- GDELT corpus is **2020-01-01 -> 2026-06-19** only; pre-2020 regime checks
+  (2011 peak, 2013 taper) are out of range for *any* text method.
+- Theme prevalence tracks regimes cleanly (ECON_INFLATION ~0.30 in mid-2022).
+
+### Open / next session
+- Full `aggregate` run is ~9 h single GPU pass (~6.4 h encode @ ~2,753 texts/s +
+  ~2.9 h aggregate_daily). Then context -> cluster -> analyze.
+- `aggregate_daily` uses per-row `iterrows` (~0.17 ms/row); fine, vectorizable.
+- Rename `005_phase3_artifacts` -> `006` to kill the duplicate-prefix fragility.
+- DB mutations this session: applied 005_phase3_artifacts; harness runs 34-35;
+  `daily_topic_prevalence` fully populated (themes); `daily_text_features` holds
+  1 day (2026-05-01) from a smoke (idempotent — a full aggregate overwrites it).

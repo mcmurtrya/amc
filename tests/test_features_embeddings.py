@@ -23,6 +23,7 @@ from metals.features.embeddings import (
     SHARD_PREFIX_LEN,
     _hash_hex,
     _shard_prefix,
+    cache_embeddings,
     cache_inventory,
     embed_dataframe,
     embed_texts,
@@ -330,3 +331,47 @@ def test_env_var_chooses_model_name(isolated_cache, monkeypatch):
     with patch("metals.features.embeddings._get_model", side_effect=fake_get):
         embed_texts(["t"])
     assert captured["name"] == "env-selected-model"
+
+
+# ---------------------------------------------------------------------------
+# cache_embeddings — streaming cache warm (no full-corpus vstack)
+# ---------------------------------------------------------------------------
+def test_cache_embeddings_populates_cache_and_counts(isolated_cache):
+    fake = _FakeModel(dim=8)
+    with patch("metals.features.embeddings._get_model", return_value=fake):
+        n_new = cache_embeddings(["a", "b", "c"], sub_chunk=2)
+    assert n_new == 3
+    inv = cache_inventory(EmbedConfig())
+    assert inv["rows"] == 3
+
+
+def test_cache_embeddings_is_idempotent_on_repeat(isolated_cache):
+    fake = _FakeModel(dim=8)
+    with patch("metals.features.embeddings._get_model", return_value=fake):
+        first = cache_embeddings(["a", "b", "c"])
+        second = cache_embeddings(["a", "b", "c"])  # all cache hits now
+    assert first == 3
+    assert second == 0
+
+
+def test_cache_embeddings_dedups_within_block(isolated_cache):
+    fake = _FakeModel(dim=8)
+    with patch("metals.features.embeddings._get_model", return_value=fake):
+        # 5 inputs, 2 distinct -> only 2 newly encoded
+        n_new = cache_embeddings(["x", "y", "x", "y", "x"])
+    assert n_new == 2
+
+
+def test_cache_embeddings_matches_embed_texts_values(isolated_cache):
+    """A cache warmed by cache_embeddings serves embed_texts without re-encoding."""
+    fake = _FakeModel(dim=8)
+    with patch("metals.features.embeddings._get_model", return_value=fake):
+        cache_embeddings(["foo", "bar"])
+        calls_after_warm = fake.encode_calls
+        arr = embed_texts(["foo", "bar"])  # should be pure cache hits
+    assert arr.shape == (2, 8)
+    assert fake.encode_calls == calls_after_warm  # no new encodes
+
+
+def test_cache_embeddings_empty_input(isolated_cache):
+    assert cache_embeddings([]) == 0
