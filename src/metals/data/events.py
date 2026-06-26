@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
@@ -88,7 +88,7 @@ def refresh(
     """Load + upsert FOMC events. ``cutoff`` (YYYY-MM-DD) drops future rows."""
     df = load_fomc_csv(path)
     if cutoff is None:
-        cutoff = datetime.now(timezone.utc).date().isoformat()
+        cutoff = datetime.now(UTC).date().isoformat()
     df = df[df["timestamp_utc"] <= pd.Timestamp(cutoff)]
     n = upsert_events(df)
     return {

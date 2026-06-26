@@ -24,7 +24,7 @@ from __future__ import annotations
 import argparse
 import io
 import zipfile
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import pandas as pd
 import requests
@@ -231,7 +231,7 @@ def refresh(start_year: int = 2007, end_year: int | None = None) -> dict:
     """Pull every year from ``start_year`` to ``end_year`` (default: current)
     and upsert. Returns a summary dict."""
     if end_year is None:
-        end_year = datetime.now(timezone.utc).year
+        end_year = datetime.now(UTC).year
     total = 0
     per_year: dict[int, int] = {}
     skipped: list[int] = []

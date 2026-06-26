@@ -28,7 +28,6 @@ import pandas as pd
 
 from metals.eval.cv import walk_forward_splits
 from metals.eval.harness import (
-    aggregate_feature_importances,
     log_feature_importances,
     log_predictions,
     register_run,
@@ -172,7 +171,7 @@ def render_report(
     target_kind: str,
 ) -> str:
     lines: list[str] = []
-    lines.append(f"# Phase 1 diagnosis: negative IC investigation\n")
+    lines.append("# Phase 1 diagnosis: negative IC investigation\n")
     lines.append(f"_Generated {datetime.now():%Y-%m-%d %H:%M}_\n")
     lines.append(f"Target: `{target_kind}`, horizon: {horizon} trading days.\n")
     lines.append("## Per-metal subset comparison\n")

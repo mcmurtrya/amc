@@ -102,11 +102,9 @@ def test_fit_and_assign_clusters_on_synthetic_blobs():
 
 def test_save_and_load_pipeline_round_trip(tmp_path, monkeypatch):
     """Persist a tiny pipeline shell (no real UMAP/HDBSCAN) and load it back."""
-    import pickle
 
     from metals.models.clustering import (
         ClusterPipeline,
-        MODEL_DIR,
         load_pipeline,
         save_pipeline,
     )

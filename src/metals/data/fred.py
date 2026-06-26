@@ -9,8 +9,8 @@ from __future__ import annotations
 
 import argparse
 import os
-from datetime import datetime, timezone
-from typing import Iterable
+from collections.abc import Iterable
+from datetime import UTC, datetime
 
 import pandas as pd
 from dotenv import load_dotenv
@@ -157,7 +157,7 @@ def refresh(start: str | None = None, end: str | None = None) -> dict:
     series_ids = [row["id"] for row in cfg.get("series", [])]
     dr = cfg.get("date_range", {})
     start = start or dr.get("start") or "2007-01-01"
-    end = end or dr.get("end") or datetime.now(timezone.utc).date().isoformat()
+    end = end or dr.get("end") or datetime.now(UTC).date().isoformat()
 
     df = fetch_fred_series(series_ids, start=start, end=end)
     n = upsert_macro(df)

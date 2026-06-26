@@ -26,7 +26,8 @@ window is deliberately short (3 days) to keep the probe cheap; widen with
 Run:
     uv run python scripts/phase3_gkg_enrichment_probe.py                 # dry-run only
     uv run python scripts/phase3_gkg_enrichment_probe.py --execute       # download + stats
-    uv run python scripts/phase3_gkg_enrichment_probe.py --start 2024-06-01 --end 2024-06-07 --execute
+    uv run python scripts/phase3_gkg_enrichment_probe.py \
+        --start 2024-06-01 --end 2024-06-07 --execute
 """
 
 from __future__ import annotations
@@ -36,10 +37,9 @@ import os
 import re
 from collections import Counter
 
-import pandas as pd
 from dotenv import load_dotenv
 
-from metals.data.gdelt import TABLE, build_query, load_themes
+from metals.data.gdelt import build_query, load_themes
 from metals.data.text_prep import url_to_text
 
 load_dotenv()

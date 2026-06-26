@@ -9,7 +9,6 @@ from __future__ import annotations
 
 from scripts.phase1_diagnose import SUBSETS, configurations, feature_subset
 
-
 SAMPLE_COLUMNS = [
     # returns + vol family
     "GC=F_ret_1d",

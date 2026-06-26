@@ -80,7 +80,11 @@ def test_parse_llm_response_with_markdown_fences():
 
 
 def test_parse_llm_response_extracts_embedded_json():
-    raw = 'Sure, here you go:\n{"label":"hawkish-fed","description":"d","confidence":"high"}\nLet me know if...'
+    raw = (
+        "Sure, here you go:\n"
+        '{"label":"hawkish-fed","description":"d","confidence":"high"}\n'
+        "Let me know if..."
+    )
     out = parse_llm_response(raw, cluster_id=1)
     assert out.label == "hawkish-fed"
 
@@ -242,10 +246,11 @@ def test_label_all_clusters_iterates():
 
 
 def test_upsert_and_load_labels_round_trip():
+    import numpy as np
+
     from metals.data.migrations.runner import apply_migrations
     from metals.eval.cluster_labeling import load_labels, upsert_labels
     from metals.models.clustering import upsert_centroids
-    import numpy as np
 
     apply_migrations(verbose=False)
 

@@ -26,7 +26,8 @@ uv run mypy                                           # type-check (src/metals o
 uv run python -m metals.data.migrations.runner        # apply DB migrations
 ```
 
-Run lint, mypy, and the relevant tests before considering a change done.
+Run lint, format, mypy, and the relevant tests before considering a change done
+(`ruff check` and `ruff format` are both enforced; the codebase is kept clean of both).
 
 ## Architecture
 

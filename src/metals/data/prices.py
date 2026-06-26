@@ -14,8 +14,8 @@ contracts that we want to record and inspect, not silently retry.
 from __future__ import annotations
 
 import argparse
-from datetime import datetime, timezone
-from typing import Iterable
+from collections.abc import Iterable
+from datetime import UTC, datetime
 
 import pandas as pd
 
@@ -146,7 +146,7 @@ def refresh(start: str | None = None, end: str | None = None) -> dict:
     tickers = [row["ticker"] for row in _flatten_tickers(cfg)]
     dr = cfg.get("date_range", {})
     start = start or dr.get("start") or "2007-01-01"
-    end = end or dr.get("end") or datetime.now(timezone.utc).date().isoformat()
+    end = end or dr.get("end") or datetime.now(UTC).date().isoformat()
 
     df = fetch_yfinance(tickers, start=start, end=end)
     n = upsert_prices(df)

@@ -40,7 +40,7 @@ def test_chunks_cover_range_without_overlap():
     # contiguous: each chunk starts the day after the previous ends
     import pandas as pd
 
-    for (_, e0), (s1, _) in zip(chunks, chunks[1:]):
+    for (_, e0), (s1, _) in zip(chunks, chunks[1:], strict=False):
         assert pd.Timestamp(s1) == pd.Timestamp(e0) + pd.Timedelta(days=1)
 
 

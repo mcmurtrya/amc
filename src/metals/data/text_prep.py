@@ -18,7 +18,7 @@ it does not translate them. Language handling is a downstream concern.
 from __future__ import annotations
 
 import re
-from typing import Iterable
+from collections.abc import Iterable
 from urllib.parse import urlsplit
 
 # File extensions that appear at the end of a path segment on news sites.

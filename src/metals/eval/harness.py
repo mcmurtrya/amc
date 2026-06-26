@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 import subprocess
 import uuid
-from typing import Iterable
+from collections.abc import Iterable
 
 import numpy as np
 import pandas as pd
@@ -181,7 +181,7 @@ def compare_runs(run_ids: Iterable[str], metric: str = "rmse") -> pd.DataFrame:
             f"SELECT run_id, name FROM runs WHERE run_id IN ({placeholders})",
             run_ids,
         ).fetchdf()
-    name_map = dict(zip(runs["run_id"], runs["name"]))
+    name_map = dict(zip(runs["run_id"], runs["name"], strict=False))
 
     frames = []
     for rid in run_ids:

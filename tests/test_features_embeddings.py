@@ -18,9 +18,9 @@ import pytest
 from metals.features.embeddings import (
     DEFAULT_DTYPE,
     DEFAULT_MODEL,
+    SHARD_PREFIX_LEN,
     EmbedConfig,
     ParquetEmbeddingCache,
-    SHARD_PREFIX_LEN,
     _hash_hex,
     _shard_prefix,
     cache_embeddings,
@@ -29,7 +29,6 @@ from metals.features.embeddings import (
     embed_texts,
     resolve_cache_dir,
 )
-
 
 # ---------------------------------------------------------------------------
 # Default model + config

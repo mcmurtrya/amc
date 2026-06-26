@@ -25,9 +25,9 @@ from __future__ import annotations
 import argparse
 import json
 import os
-from datetime import date, datetime, timedelta, timezone
+from collections.abc import Iterable
+from datetime import date
 from pathlib import Path
-from typing import Iterable
 
 import pandas as pd
 import yaml
@@ -149,7 +149,7 @@ def parse_gkg_rows(raw: pd.DataFrame, themes_filter: list[str]) -> pd.DataFrame:
         parts = s.split(",")
         keys = ("overall", "positive", "negative", "polarity", "ard", "sgrd")
         out = {}
-        for k, v in zip(keys, parts):
+        for k, v in zip(keys, parts, strict=False):
             try:
                 out[k] = float(v)
             except (ValueError, TypeError):

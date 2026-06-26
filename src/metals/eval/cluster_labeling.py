@@ -25,8 +25,8 @@ import json
 import os
 import re
 import time
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
-from typing import Callable, Iterable
 
 import pandas as pd
 
@@ -126,7 +126,7 @@ def parse_llm_response(text: str, cluster_id: int) -> ClusterLabel:
         # Fallback: try to extract the first {...} block
         m = re.search(r"\{.*\}", cleaned, flags=re.DOTALL)
         if not m:
-            raise ValueError(f"Could not extract JSON from LLM response: {text!r}")
+            raise ValueError(f"Could not extract JSON from LLM response: {text!r}") from None
         obj = json.loads(m.group(0))
     label = str(obj.get("label", "unclear")).strip().lower()
     description = str(obj.get("description", "")).strip()
@@ -169,9 +169,8 @@ def build_cluster_context(
         for d in rep_dates_ts:
             day_hl = hl[hl["day"] == d]
             for _, row in day_hl.head(n_headlines_per_day).iterrows():
-                headline_strs.append(
-                    f"{d.strftime('%Y-%m-%d')}: {row.get('headline') or row.get('article_url') or '(no text)'}"
-                )
+                headline_text = row.get("headline") or row.get("article_url") or "(no text)"
+                headline_strs.append(f"{d.strftime('%Y-%m-%d')}: {headline_text}")
 
     topics_pairs: list[tuple[str, float]] = []
     if dominant_topics is not None and not dominant_topics.empty:

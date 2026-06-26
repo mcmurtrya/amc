@@ -43,9 +43,9 @@ import os
 import sys
 import warnings
 from collections import OrderedDict
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
 
 import numpy as np
 import pandas as pd
@@ -170,7 +170,9 @@ class ParquetEmbeddingCache:
             tbl = pq.read_table(path, columns=["text_hash", "embedding"])
             hashes = tbl.column("text_hash").to_pylist()
             embeddings = tbl.column("embedding").to_pylist()
-            shard = {h: np.asarray(e, dtype=np.float32) for h, e in zip(hashes, embeddings)}
+            shard = {
+                h: np.asarray(e, dtype=np.float32) for h, e in zip(hashes, embeddings, strict=False)
+            }
         else:
             shard = {}
         self._lru[prefix] = shard
@@ -264,7 +266,7 @@ def embed_texts(
     cache = ParquetEmbeddingCache(resolve_cache_dir(), config) if use_cache else None
     cached = cache.read_many([h for h in hexes if h]) if cache is not None else {}
     missing_idx: list[int] = []
-    for i, (t, h) in enumerate(zip(texts, hexes)):
+    for i, (t, h) in enumerate(zip(texts, hexes, strict=False)):
         if not t:
             continue
         if h not in cached:
@@ -285,7 +287,7 @@ def embed_texts(
         cached.update(new_items)
     dim = next((v.shape[0] for v in cached.values()), 0)
     ordered: list[np.ndarray] = []
-    for t, h in zip(texts, hexes):
+    for t, h in zip(texts, hexes, strict=False):
         if not t:
             ordered.append(np.zeros(dim, dtype=np.float32))
         else:

@@ -8,7 +8,6 @@ import pytest
 
 from metals.data.fomc_surprises import (
     REQUIRED_COLUMNS,
-    SURPRISE_COLUMNS,
     clean_surprises_dataframe,
 )
 

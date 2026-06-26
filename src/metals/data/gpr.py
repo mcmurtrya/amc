@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import argparse
 import io
-from datetime import datetime, timezone
 
 import pandas as pd
 import requests

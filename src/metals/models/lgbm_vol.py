@@ -156,8 +156,8 @@ def train_one_split(
     gain = model.booster_.feature_importance(importance_type="gain")
     split_cnt = model.booster_.feature_importance(importance_type="split")
     importances = {
-        "gain": {f: float(v) for f, v in zip(feat_names, gain)},
-        "split": {f: float(v) for f, v in zip(feat_names, split_cnt)},
+        "gain": {f: float(v) for f, v in zip(feat_names, gain, strict=False)},
+        "split": {f: float(v) for f, v in zip(feat_names, split_cnt, strict=False)},
     }
     return pred_df, result, importances
 
