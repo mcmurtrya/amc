@@ -68,8 +68,7 @@ def gap_ranges(start: str, end: str, present: set[str]) -> list[tuple[str, str]]
     def flush() -> None:
         if run:
             lo, hi = run[0], run[-1]
-            ranges.append((lo.start_time.date().isoformat(),
-                           hi.end_time.date().isoformat()))
+            ranges.append((lo.start_time.date().isoformat(), hi.end_time.date().isoformat()))
             run.clear()
 
     for m in months:
@@ -124,8 +123,12 @@ def main() -> None:
     ap.add_argument("--start", default=GKG2_START, help=f"YYYY-MM-DD (default {GKG2_START}).")
     ap.add_argument("--end", default=date.today().isoformat(), help="YYYY-MM-DD (default today).")
     ap.add_argument("--chunk-days", type=int, default=30, help="Days per BigQuery chunk.")
-    ap.add_argument("--max-gb", type=float, default=100.0,
-                    help="Hard cap on bytes billed per chunk (GB) under --execute.")
+    ap.add_argument(
+        "--max-gb",
+        type=float,
+        default=100.0,
+        help="Hard cap on bytes billed per chunk (GB) under --execute.",
+    )
     ap.add_argument("--estimate", action="store_true", help="Dry-run cost to fill the gaps.")
     ap.add_argument("--execute", action="store_true", help="Actually pull the missing chunks.")
     args = ap.parse_args()
@@ -139,9 +142,7 @@ def main() -> None:
     if not gaps:
         print("No gaps — corpus is continuous over the target range.")
         return
-    total_missing = sum(
-        len(pd.period_range(lo, hi, freq="M")) for lo, hi in gaps
-    )
+    total_missing = sum(len(pd.period_range(lo, hi, freq="M")) for lo, hi in gaps)
     print(f"Missing months: {total_missing}, in {len(gaps)} gap range(s):")
     for lo, hi in gaps:
         print(f"  - {lo} .. {hi}")
@@ -163,13 +164,15 @@ def main() -> None:
             else:
                 b = estimate_bytes(cs, ce, themes)
                 grand_bytes += b
-                print(f"  {cs}..{ce}: scans {b/1024**3:,.1f} GB")
+                print(f"  {cs}..{ce}: scans {b / 1024**3:,.1f} GB")
 
     if args.execute:
         print(f"\nDone. Rows upserted: {grand_rows:,}")
     else:
-        print(f"\nTotal scan: {grand_bytes/1024**4:,.2f} TB"
-              f"  ~= ${_usd(grand_bytes):,.2f} (after {FREE_TIER_TB:.0f} TB/mo free tier)")
+        print(
+            f"\nTotal scan: {grand_bytes / 1024**4:,.2f} TB"
+            f"  ~= ${_usd(grand_bytes):,.2f} (after {FREE_TIER_TB:.0f} TB/mo free tier)"
+        )
         print("Dry runs are free. Re-run with --execute --max-gb N to fill.")
 
 

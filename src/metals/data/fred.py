@@ -23,11 +23,11 @@ SOURCE_TAG = "fred"
 
 # Approximate observations per year by reported frequency.
 EXPECTED_PER_YEAR: dict[str, int] = {
-    "daily":     252,
-    "weekly":    52,
-    "monthly":   12,
+    "daily": 252,
+    "weekly": 52,
+    "monthly": 12,
     "quarterly": 4,
-    "annual":    1,
+    "annual": 1,
 }
 
 
@@ -37,9 +37,7 @@ def _client():
 
     api_key = os.getenv("FRED_API_KEY")
     if not api_key:
-        raise RuntimeError(
-            "FRED_API_KEY not set. Add it to .env (copy .env.example to start)."
-        )
+        raise RuntimeError("FRED_API_KEY not set. Add it to .env (copy .env.example to start).")
     return Fred(api_key=api_key)
 
 
@@ -95,8 +93,16 @@ def coverage_report(
     end_ts = pd.Timestamp(end) if end else pd.Timestamp.utcnow().normalize()
     series_freq = series_freq or {}
 
-    cols = ["series_id", "freq", "rows", "first_obs", "last_obs",
-            "expected_rows", "coverage", "flagged"]
+    cols = [
+        "series_id",
+        "freq",
+        "rows",
+        "first_obs",
+        "last_obs",
+        "expected_rows",
+        "coverage",
+        "flagged",
+    ]
     if df.empty:
         return pd.DataFrame(columns=cols)
 
@@ -108,21 +114,19 @@ def coverage_report(
         expected = max(int(round(per_year * years)), 1)
         rows = int(len(g))
         coverage = rows / expected
-        rows_out.append({
-            "series_id":     sid,
-            "freq":          freq,
-            "rows":          rows,
-            "first_obs":     g["timestamp_utc"].min(),
-            "last_obs":      g["timestamp_utc"].max(),
-            "expected_rows": expected,
-            "coverage":      coverage,
-            "flagged":       bool(coverage < min_coverage),
-        })
-    return (
-        pd.DataFrame(rows_out, columns=cols)
-        .sort_values("coverage")
-        .reset_index(drop=True)
-    )
+        rows_out.append(
+            {
+                "series_id": sid,
+                "freq": freq,
+                "rows": rows,
+                "first_obs": g["timestamp_utc"].min(),
+                "last_obs": g["timestamp_utc"].max(),
+                "expected_rows": expected,
+                "coverage": coverage,
+                "flagged": bool(coverage < min_coverage),
+            }
+        )
+    return pd.DataFrame(rows_out, columns=cols).sort_values("coverage").reset_index(drop=True)
 
 
 def upsert_macro(df: pd.DataFrame) -> int:

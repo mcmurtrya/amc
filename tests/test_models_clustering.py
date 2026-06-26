@@ -71,14 +71,14 @@ def test_fit_and_assign_clusters_on_synthetic_blobs():
     from sklearn.datasets import make_blobs
 
     from metals.models.clustering import (
-        assign_clusters, cluster_centroids, fit_clustering,
+        assign_clusters,
+        cluster_centroids,
+        fit_clustering,
     )
 
-    X_arr, _ = make_blobs(n_samples=200, n_features=8, centers=3,
-                          cluster_std=0.6, random_state=0)
+    X_arr, _ = make_blobs(n_samples=200, n_features=8, centers=3, cluster_std=0.6, random_state=0)
     idx = pd.date_range("2020-01-01", periods=200, freq="D")
-    X = pd.DataFrame(X_arr, index=idx,
-                     columns=[f"f{i}" for i in range(X_arr.shape[1])])
+    X = pd.DataFrame(X_arr, index=idx, columns=[f"f{i}" for i in range(X_arr.shape[1])])
     cfg = ClusteringConfig(
         umap_n_components=2,
         umap_n_neighbors=15,
@@ -105,8 +105,12 @@ def test_save_and_load_pipeline_round_trip(tmp_path, monkeypatch):
     import pickle
 
     from metals.models.clustering import (
-        ClusterPipeline, MODEL_DIR, load_pipeline, save_pipeline,
+        ClusterPipeline,
+        MODEL_DIR,
+        load_pipeline,
+        save_pipeline,
     )
+
     # Use tmp_path for the model directory.
     monkeypatch.setattr("metals.models.clustering.MODEL_DIR", tmp_path)
 
@@ -134,21 +138,31 @@ def test_upsert_assignments_and_centroids():
     from metals.models.clustering import upsert_assignments, upsert_centroids
 
     apply_migrations(verbose=False)
-    assignments = pd.DataFrame({
-        "timestamp_utc": pd.to_datetime(["2024-01-01", "2024-01-02", "2024-01-03"]),
-        "cluster_id":    [0, 1, 0],
-        "confidence":    [0.9, 0.4, 0.8],
-    })
+    assignments = pd.DataFrame(
+        {
+            "timestamp_utc": pd.to_datetime(["2024-01-01", "2024-01-02", "2024-01-03"]),
+            "cluster_id": [0, 1, 0],
+            "confidence": [0.9, 0.4, 0.8],
+        }
+    )
     n = upsert_assignments(assignments, model_version="t_v1")
     assert n == 3
 
-    centroids = pd.DataFrame([
-        {"cluster_id": 0, "n_members": 2,
-         "centroid": np.array([0.1, 0.2, 0.3], dtype=np.float32),
-         "centroid_dim": 3},
-        {"cluster_id": 1, "n_members": 1,
-         "centroid": np.array([0.5, 0.6, 0.7], dtype=np.float32),
-         "centroid_dim": 3},
-    ])
+    centroids = pd.DataFrame(
+        [
+            {
+                "cluster_id": 0,
+                "n_members": 2,
+                "centroid": np.array([0.1, 0.2, 0.3], dtype=np.float32),
+                "centroid_dim": 3,
+            },
+            {
+                "cluster_id": 1,
+                "n_members": 1,
+                "centroid": np.array([0.5, 0.6, 0.7], dtype=np.float32),
+                "centroid_dim": 3,
+            },
+        ]
+    )
     nc = upsert_centroids(centroids, model_version="t_v1")
     assert nc == 2

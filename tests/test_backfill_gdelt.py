@@ -39,10 +39,11 @@ def test_chunks_cover_range_without_overlap():
     assert chunks[-1][1] == "2022-03-15"
     # contiguous: each chunk starts the day after the previous ends
     import pandas as pd
+
     for (_, e0), (s1, _) in zip(chunks, chunks[1:]):
         assert pd.Timestamp(s1) == pd.Timestamp(e0) + pd.Timedelta(days=1)
 
 
 def test_usd_respects_free_tier():
-    assert _usd(int(0.5 * 1024**4)) == 0.0        # within 1 TB/mo free tier
-    assert abs(_usd(2 * 1024**4) - 6.25) < 1e-6   # (2-1) TB * $6.25/TB
+    assert _usd(int(0.5 * 1024**4)) == 0.0  # within 1 TB/mo free tier
+    assert abs(_usd(2 * 1024**4) - 6.25) < 1e-6  # (2-1) TB * $6.25/TB

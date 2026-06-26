@@ -80,8 +80,8 @@ def test_log_returns_handles_nonpositive_price():
     """A non-positive price (cf. WTI on 2020-04-20) must produce NaN returns,
     not -inf or a propagated negative value."""
     p = _toy_prices(n=10)
-    p.iloc[5, 0] = -37.63   # Simulate WTI going negative.
-    p.iloc[6, 0] = 0.0       # And a hard zero immediately after.
+    p.iloc[5, 0] = -37.63  # Simulate WTI going negative.
+    p.iloc[6, 0] = 0.0  # And a hard zero immediately after.
     r = compute_log_returns(p, horizons=(1,))
     # Returns into the bad rows (t=5,6) and out of them (t=6,7) must be NaN.
     assert pd.isna(r["A_ret_1d"].iloc[5])
@@ -97,6 +97,7 @@ def test_log_returns_handles_nonpositive_price():
 def test_log_returns_does_not_warn_on_nonpositive_price():
     """Regression: np.log must not emit RuntimeWarning on the masked path."""
     import warnings
+
     p = _toy_prices(n=10)
     p.iloc[5, 0] = -1.0
     with warnings.catch_warnings():

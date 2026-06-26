@@ -51,6 +51,7 @@ def _toy_context() -> ClusterContext:
 # Prompt and parser
 # ---------------------------------------------------------------------------
 
+
 def test_build_labeling_prompt_includes_required_fields():
     prompt = build_labeling_prompt(_toy_context())
     assert "Cluster ID: 7" in prompt
@@ -79,7 +80,7 @@ def test_parse_llm_response_with_markdown_fences():
 
 
 def test_parse_llm_response_extracts_embedded_json():
-    raw = "Sure, here you go:\n{\"label\":\"hawkish-fed\",\"description\":\"d\",\"confidence\":\"high\"}\nLet me know if..."
+    raw = 'Sure, here you go:\n{"label":"hawkish-fed","description":"d","confidence":"high"}\nLet me know if...'
     out = parse_llm_response(raw, cluster_id=1)
     assert out.label == "hawkish-fed"
 
@@ -105,32 +106,42 @@ def test_parse_llm_response_normalizes_label_casing():
 # Context builder
 # ---------------------------------------------------------------------------
 
+
 def test_build_cluster_context_assembles_all_fields():
-    assignments = pd.DataFrame({
-        "timestamp_utc": pd.to_datetime(["2024-01-01", "2024-01-02", "2024-01-03"]),
-        "cluster_id":    [0, 0, 1],
-        "confidence":    [0.9, 0.8, 0.7],
-    })
-    headlines = pd.DataFrame({
-        "timestamp_utc": pd.to_datetime(["2024-01-01 09:00", "2024-01-01 14:00",
-                                         "2024-01-02 10:00"]),
-        "article_url":   ["u1", "u2", "u3"],
-        "headline":      ["h1", "h2", "h3"],
-    })
-    dominant_topics = pd.DataFrame({
-        "cluster_id":      [0, 0, 1],
-        "topic_col":       ["topic_3", "topic_7", "topic_2"],
-        "mean_prevalence": [0.5, 0.3, 0.6],
-    })
-    forward_stats = pd.DataFrame({
-        "cluster_id": [0, 0, 1],
-        "ticker":     ["GC=F", "SI=F", "GC=F"],
-        "horizon":    [5, 5, 5],
-        "mean":       [0.01, 0.02, -0.005],
-        "std":        [0.05, 0.07, 0.06],
-        "hit_rate":   [0.6, 0.55, 0.45],
-        "n":          [25, 25, 12],
-    })
+    assignments = pd.DataFrame(
+        {
+            "timestamp_utc": pd.to_datetime(["2024-01-01", "2024-01-02", "2024-01-03"]),
+            "cluster_id": [0, 0, 1],
+            "confidence": [0.9, 0.8, 0.7],
+        }
+    )
+    headlines = pd.DataFrame(
+        {
+            "timestamp_utc": pd.to_datetime(
+                ["2024-01-01 09:00", "2024-01-01 14:00", "2024-01-02 10:00"]
+            ),
+            "article_url": ["u1", "u2", "u3"],
+            "headline": ["h1", "h2", "h3"],
+        }
+    )
+    dominant_topics = pd.DataFrame(
+        {
+            "cluster_id": [0, 0, 1],
+            "topic_col": ["topic_3", "topic_7", "topic_2"],
+            "mean_prevalence": [0.5, 0.3, 0.6],
+        }
+    )
+    forward_stats = pd.DataFrame(
+        {
+            "cluster_id": [0, 0, 1],
+            "ticker": ["GC=F", "SI=F", "GC=F"],
+            "horizon": [5, 5, 5],
+            "mean": [0.01, 0.02, -0.005],
+            "std": [0.05, 0.07, 0.06],
+            "hit_rate": [0.6, 0.55, 0.45],
+            "n": [25, 25, 12],
+        }
+    )
     ctx = build_cluster_context(
         cluster_id=0,
         assignments=assignments,
@@ -148,10 +159,12 @@ def test_build_cluster_context_assembles_all_fields():
 
 
 def test_build_cluster_context_handles_missing_optionals():
-    assignments = pd.DataFrame({
-        "timestamp_utc": pd.to_datetime(["2024-01-01"]),
-        "cluster_id":    [0],
-    })
+    assignments = pd.DataFrame(
+        {
+            "timestamp_utc": pd.to_datetime(["2024-01-01"]),
+            "cluster_id": [0],
+        }
+    )
     ctx = build_cluster_context(
         cluster_id=0,
         assignments=assignments,
@@ -168,12 +181,15 @@ def test_build_cluster_context_handles_missing_optionals():
 # End-to-end with mocked caller
 # ---------------------------------------------------------------------------
 
+
 def test_label_cluster_uses_caller_and_parses_response():
-    canned = json.dumps({
-        "label": "geopolitical-supply-shock",
-        "description": "Russia sanctions hit Pd supply",
-        "confidence": "high",
-    })
+    canned = json.dumps(
+        {
+            "label": "geopolitical-supply-shock",
+            "description": "Russia sanctions hit Pd supply",
+            "confidence": "high",
+        }
+    )
 
     def fake_caller(system, user, model, max_tokens):
         # Spot-check we passed the system + prompt body through.
@@ -196,8 +212,7 @@ def test_label_cluster_retries_then_succeeds():
             raise RuntimeError("transient")
         return '{"label":"x","description":"y","confidence":"high"}'
 
-    out = label_cluster(_toy_context(), caller=flaky_caller,
-                        max_retries=3, retry_delay_s=0.01)
+    out = label_cluster(_toy_context(), caller=flaky_caller, max_retries=3, retry_delay_s=0.01)
     assert out.label == "x"
     assert calls["n"] == 2
 
@@ -207,8 +222,7 @@ def test_label_cluster_gives_up_after_retries():
         raise RuntimeError("api down")
 
     with pytest.raises(RuntimeError, match="failed after"):
-        label_cluster(_toy_context(), caller=always_fail,
-                      max_retries=2, retry_delay_s=0.01)
+        label_cluster(_toy_context(), caller=always_fail, max_retries=2, retry_delay_s=0.01)
 
 
 def test_label_all_clusters_iterates():
@@ -226,6 +240,7 @@ def test_label_all_clusters_iterates():
 # Persistence
 # ---------------------------------------------------------------------------
 
+
 def test_upsert_and_load_labels_round_trip():
     from metals.data.migrations.runner import apply_migrations
     from metals.eval.cluster_labeling import load_labels, upsert_labels
@@ -235,19 +250,27 @@ def test_upsert_and_load_labels_round_trip():
     apply_migrations(verbose=False)
 
     # Seed the centroids table so the UPDATE has rows to hit.
-    centroids = pd.DataFrame([
-        {"cluster_id": 0, "n_members": 25,
-         "centroid": np.array([0.1, 0.2], dtype=np.float32), "centroid_dim": 2},
-        {"cluster_id": 1, "n_members": 18,
-         "centroid": np.array([0.5, 0.6], dtype=np.float32), "centroid_dim": 2},
-    ])
+    centroids = pd.DataFrame(
+        [
+            {
+                "cluster_id": 0,
+                "n_members": 25,
+                "centroid": np.array([0.1, 0.2], dtype=np.float32),
+                "centroid_dim": 2,
+            },
+            {
+                "cluster_id": 1,
+                "n_members": 18,
+                "centroid": np.array([0.5, 0.6], dtype=np.float32),
+                "centroid_dim": 2,
+            },
+        ]
+    )
     upsert_centroids(centroids, model_version="test_v1")
 
     labels = [
-        ClusterLabel(cluster_id=0, label="hawkish-fed",
-                     description="d0", confidence="high"),
-        ClusterLabel(cluster_id=1, label="china-demand",
-                     description="d1", confidence="medium"),
+        ClusterLabel(cluster_id=0, label="hawkish-fed", description="d0", confidence="high"),
+        ClusterLabel(cluster_id=1, label="china-demand", description="d1", confidence="medium"),
     ]
     n = upsert_labels(labels, model_version="test_v1")
     assert n == 2

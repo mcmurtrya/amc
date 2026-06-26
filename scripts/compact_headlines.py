@@ -72,6 +72,7 @@ def build_schema(con: duckdb.DuckDBPyConnection) -> None:
             [sql_path.stem],
         )
     from metals.eval.harness import _ensure_schema  # noqa: WPS433
+
     _ensure_schema(con)
 
 
@@ -131,9 +132,7 @@ def compact(source: Path, out: Path, *, force: bool) -> dict:
         else:
             cols = [c for c in _columns(con, t) if c in _src_columns(con, t)]
             collist = ", ".join(f'"{c}"' for c in cols)
-            con.execute(
-                f'INSERT INTO "{t}" ({collist}) SELECT {collist} FROM src."{t}"'
-            )
+            con.execute(f'INSERT INTO "{t}" ({collist}) SELECT {collist} FROM src."{t}"')
         n_out = con.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0]
         n_src = con.execute(f'SELECT COUNT(*) FROM src."{t}"').fetchone()[0]
         ok = n_out == n_src
@@ -145,23 +144,29 @@ def compact(source: Path, out: Path, *, force: bool) -> dict:
     con.close()
 
     if not all(v["ok"] for v in summary.values()):
-        raise SystemExit("Row-count mismatch detected; refusing to proceed. "
-                         f"Inspect {out} and re-run.")
+        raise SystemExit(
+            f"Row-count mismatch detected; refusing to proceed. Inspect {out} and re-run."
+        )
     return summary
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    ap.add_argument("--db", type=Path, default=DEFAULT_DB,
-                    help=f"Source DuckDB (default: {DEFAULT_DB}).")
-    ap.add_argument("--out", type=Path, default=None,
-                    help="Output path (default: <db>.compact).")
-    ap.add_argument("--replace", action="store_true",
-                    help="Swap the compacted file over the original after verifying.")
-    ap.add_argument("--no-backup", action="store_true",
-                    help="With --replace, do not keep a .bak of the original.")
-    ap.add_argument("--force", action="store_true",
-                    help="Overwrite an existing output file.")
+    ap.add_argument(
+        "--db", type=Path, default=DEFAULT_DB, help=f"Source DuckDB (default: {DEFAULT_DB})."
+    )
+    ap.add_argument("--out", type=Path, default=None, help="Output path (default: <db>.compact).")
+    ap.add_argument(
+        "--replace",
+        action="store_true",
+        help="Swap the compacted file over the original after verifying.",
+    )
+    ap.add_argument(
+        "--no-backup",
+        action="store_true",
+        help="With --replace, do not keep a .bak of the original.",
+    )
+    ap.add_argument("--force", action="store_true", help="Overwrite an existing output file.")
     args = ap.parse_args()
 
     source = args.db
@@ -182,8 +187,7 @@ def main() -> None:
 
     if args.replace:
         if not args.no_backup:
-            bak = source.with_suffix(
-                source.suffix + f".bak-{time.strftime('%Y%m%d_%H%M%S')}")
+            bak = source.with_suffix(source.suffix + f".bak-{time.strftime('%Y%m%d_%H%M%S')}")
             os.replace(source, bak)
             print(f"\n  backed up original -> {bak}")
         else:

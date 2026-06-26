@@ -37,10 +37,12 @@ def fetch_gpr_daily(url: str = DAILY_URL, timeout: int = 30) -> pd.DataFrame:
     cols_lower = {c.lower(): c for c in df.columns}
     date_col = cols_lower.get("date") or cols_lower.get("day") or df.columns[0]
     gpr_col = cols_lower.get("gprd") or cols_lower.get("gpr") or df.columns[1]
-    out = pd.DataFrame({
-        "timestamp_utc": pd.to_datetime(df[date_col]).dt.tz_localize(None),
-        "value": pd.to_numeric(df[gpr_col], errors="coerce"),
-    })
+    out = pd.DataFrame(
+        {
+            "timestamp_utc": pd.to_datetime(df[date_col]).dt.tz_localize(None),
+            "value": pd.to_numeric(df[gpr_col], errors="coerce"),
+        }
+    )
     out["series_id"] = "GPR_DAILY"
     out = out.dropna(subset=["value"])
     return out[["timestamp_utc", "series_id", "value"]]

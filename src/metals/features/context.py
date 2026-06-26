@@ -145,7 +145,7 @@ def build_context(
         raise ValueError(f"{ticker} not present in prices.")
     log_p = np.log(prices[ticker].astype(float))
     own_state = pd.DataFrame(index=prices.index)
-    own_state[f"{ticker}_ret_5d"]  = log_p - log_p.shift(5)
+    own_state[f"{ticker}_ret_5d"] = log_p - log_p.shift(5)
     own_state[f"{ticker}_ret_20d"] = log_p - log_p.shift(20)
     ret_1d = log_p - log_p.shift(1)
     own_state[f"{ticker}_rvol_20d"] = ret_1d.rolling(20, min_periods=20).std() * float(np.sqrt(252))
@@ -158,6 +158,7 @@ def build_context(
         # axis is redundant — see results/phase3_gdelt_data_assessment.md §1/§7);
         # use it for every target metal, exactly as topic prevalence is shared.
         from metals.features.text_daily import MARKET
+
         shared = text_daily[text_daily["metal"] == MARKET]
         if shared.empty and text_daily["metal"].nunique() == 1:
             shared = text_daily  # single-series frame under a non-'market' label

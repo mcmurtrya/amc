@@ -36,13 +36,15 @@ def _synthetic_raw(rows: list[dict]) -> pd.DataFrame:
 
 def test_friday_shift():
     """Tuesday positioning -> Friday release. Verify the offset is 3 days."""
-    raw = _synthetic_raw([
-        {
-            "Market_and_Exchange_Names": "GOLD - COMMODITY EXCHANGE INC.",
-            "Report_Date_as_YYYY-MM-DD": "2024-05-21",  # a Tuesday
-            "Open_Interest_All": 100,
-        },
-    ])
+    raw = _synthetic_raw(
+        [
+            {
+                "Market_and_Exchange_Names": "GOLD - COMMODITY EXCHANGE INC.",
+                "Report_Date_as_YYYY-MM-DD": "2024-05-21",  # a Tuesday
+                "Open_Interest_All": 100,
+            },
+        ]
+    )
     out = parse_cot_dataframe(raw)
     assert len(out) == 1
     assert out.loc[0, "timestamp_utc"] == pd.Timestamp("2024-05-24")
@@ -54,23 +56,25 @@ def test_friday_shift():
 def test_excludes_emini_and_micro_variants():
     """Substring 'GOLD - COMMODITY EXCHANGE INC.' must not match
     'E-MINI GOLD' or 'MICRO GOLD' (which have it as a suffix)."""
-    raw = _synthetic_raw([
-        {
-            "Market_and_Exchange_Names": "GOLD - COMMODITY EXCHANGE INC.",
-            "Report_Date_as_YYYY-MM-DD": "2024-01-02",
-            "Open_Interest_All": 500_000,
-        },
-        {
-            "Market_and_Exchange_Names": "E-MINI GOLD - COMMODITY EXCHANGE INC.",
-            "Report_Date_as_YYYY-MM-DD": "2024-01-02",
-            "Open_Interest_All": 30_000,
-        },
-        {
-            "Market_and_Exchange_Names": "MICRO GOLD - COMMODITY EXCHANGE INC.",
-            "Report_Date_as_YYYY-MM-DD": "2024-01-02",
-            "Open_Interest_All": 5_000,
-        },
-    ])
+    raw = _synthetic_raw(
+        [
+            {
+                "Market_and_Exchange_Names": "GOLD - COMMODITY EXCHANGE INC.",
+                "Report_Date_as_YYYY-MM-DD": "2024-01-02",
+                "Open_Interest_All": 500_000,
+            },
+            {
+                "Market_and_Exchange_Names": "E-MINI GOLD - COMMODITY EXCHANGE INC.",
+                "Report_Date_as_YYYY-MM-DD": "2024-01-02",
+                "Open_Interest_All": 30_000,
+            },
+            {
+                "Market_and_Exchange_Names": "MICRO GOLD - COMMODITY EXCHANGE INC.",
+                "Report_Date_as_YYYY-MM-DD": "2024-01-02",
+                "Open_Interest_All": 5_000,
+            },
+        ]
+    )
     out = parse_cot_dataframe(raw)
     assert len(out) == 1
     assert out.loc[0, "open_interest"] == 500_000
@@ -79,34 +83,48 @@ def test_excludes_emini_and_micro_variants():
 
 def test_commercial_combines_producer_and_swap():
     """commercial_long = Producer_Long + Swap_Long; same for short."""
-    raw = _synthetic_raw([
-        {
-            "Market_and_Exchange_Names": "SILVER - COMMODITY EXCHANGE INC.",
-            "Report_Date_as_YYYY-MM-DD": "2024-06-04",
-            "Prod_Merc_Positions_Long_All": 10_000,
-            "Prod_Merc_Positions_Short_All": 30_000,
-            "Swap_Positions_Long_All": 5_000,
-            "Swap__Positions_Short_All": 7_000,
-        },
-    ])
+    raw = _synthetic_raw(
+        [
+            {
+                "Market_and_Exchange_Names": "SILVER - COMMODITY EXCHANGE INC.",
+                "Report_Date_as_YYYY-MM-DD": "2024-06-04",
+                "Prod_Merc_Positions_Long_All": 10_000,
+                "Prod_Merc_Positions_Short_All": 30_000,
+                "Swap_Positions_Long_All": 5_000,
+                "Swap__Positions_Short_All": 7_000,
+            },
+        ]
+    )
     out = parse_cot_dataframe(raw)
     assert out.loc[0, "commercial_long"] == 15_000
     assert out.loc[0, "commercial_short"] == 37_000
 
 
 def test_picks_up_all_four_metals():
-    raw = _synthetic_raw([
-        {"Market_and_Exchange_Names": "GOLD - COMMODITY EXCHANGE INC.",
-         "Report_Date_as_YYYY-MM-DD": "2024-01-02"},
-        {"Market_and_Exchange_Names": "SILVER - COMMODITY EXCHANGE INC.",
-         "Report_Date_as_YYYY-MM-DD": "2024-01-02"},
-        {"Market_and_Exchange_Names": "PLATINUM - NEW YORK MERCANTILE EXCHANGE",
-         "Report_Date_as_YYYY-MM-DD": "2024-01-02"},
-        {"Market_and_Exchange_Names": "PALLADIUM - NEW YORK MERCANTILE EXCHANGE",
-         "Report_Date_as_YYYY-MM-DD": "2024-01-02"},
-        {"Market_and_Exchange_Names": "WHEAT - CHICAGO BOARD OF TRADE",
-         "Report_Date_as_YYYY-MM-DD": "2024-01-02"},
-    ])
+    raw = _synthetic_raw(
+        [
+            {
+                "Market_and_Exchange_Names": "GOLD - COMMODITY EXCHANGE INC.",
+                "Report_Date_as_YYYY-MM-DD": "2024-01-02",
+            },
+            {
+                "Market_and_Exchange_Names": "SILVER - COMMODITY EXCHANGE INC.",
+                "Report_Date_as_YYYY-MM-DD": "2024-01-02",
+            },
+            {
+                "Market_and_Exchange_Names": "PLATINUM - NEW YORK MERCANTILE EXCHANGE",
+                "Report_Date_as_YYYY-MM-DD": "2024-01-02",
+            },
+            {
+                "Market_and_Exchange_Names": "PALLADIUM - NEW YORK MERCANTILE EXCHANGE",
+                "Report_Date_as_YYYY-MM-DD": "2024-01-02",
+            },
+            {
+                "Market_and_Exchange_Names": "WHEAT - CHICAGO BOARD OF TRADE",
+                "Report_Date_as_YYYY-MM-DD": "2024-01-02",
+            },
+        ]
+    )
     out = parse_cot_dataframe(raw)
     assert set(out["metal"]) == {"gold", "silver", "platinum", "palladium"}
     assert len(out) == 4
@@ -127,12 +145,17 @@ def test_missing_swap_columns_treated_as_zero():
         "NonRept_Positions_Short_All",
         "Open_Interest_All",
     ]
-    raw = pd.DataFrame([{
-        "Market_and_Exchange_Names": "GOLD - COMMODITY EXCHANGE INC.",
-        "Report_Date_as_YYYY-MM-DD": "2024-01-02",
-        "Prod_Merc_Positions_Long_All": 100,
-        "Prod_Merc_Positions_Short_All": 50,
-    }], columns=cols_without_swap).fillna(0)
+    raw = pd.DataFrame(
+        [
+            {
+                "Market_and_Exchange_Names": "GOLD - COMMODITY EXCHANGE INC.",
+                "Report_Date_as_YYYY-MM-DD": "2024-01-02",
+                "Prod_Merc_Positions_Long_All": 100,
+                "Prod_Merc_Positions_Short_All": 50,
+            }
+        ],
+        columns=cols_without_swap,
+    ).fillna(0)
     out = parse_cot_dataframe(raw)
     assert out.loc[0, "commercial_long"] == 100
     assert out.loc[0, "commercial_short"] == 50
@@ -145,12 +168,20 @@ def test_release_delayed_by_holiday_week():
     normally publish Fri 2022-11-25, but the CFTC slips it to Mon 2022-11-28.
     July 4 2024 (Thu): Tuesday 2024-07-02 -> Mon 2024-07-08.
     """
-    raw = _synthetic_raw([
-        {"Market_and_Exchange_Names": "GOLD - COMMODITY EXCHANGE INC.",
-         "Report_Date_as_YYYY-MM-DD": "2022-11-22", "Open_Interest_All": 1},
-        {"Market_and_Exchange_Names": "SILVER - COMMODITY EXCHANGE INC.",
-         "Report_Date_as_YYYY-MM-DD": "2024-07-02", "Open_Interest_All": 1},
-    ])
+    raw = _synthetic_raw(
+        [
+            {
+                "Market_and_Exchange_Names": "GOLD - COMMODITY EXCHANGE INC.",
+                "Report_Date_as_YYYY-MM-DD": "2022-11-22",
+                "Open_Interest_All": 1,
+            },
+            {
+                "Market_and_Exchange_Names": "SILVER - COMMODITY EXCHANGE INC.",
+                "Report_Date_as_YYYY-MM-DD": "2024-07-02",
+                "Open_Interest_All": 1,
+            },
+        ]
+    )
     out = parse_cot_dataframe(raw).set_index("metal")
     assert out.loc["gold", "timestamp_utc"] == pd.Timestamp("2022-11-28")
     assert out.loc["silver", "timestamp_utc"] == pd.Timestamp("2024-07-08")
@@ -160,10 +191,15 @@ def test_release_delayed_by_holiday_week():
 
 def test_release_normal_week_is_friday():
     """No holiday in the week -> nominal Friday is preserved (regression guard)."""
-    raw = _synthetic_raw([
-        {"Market_and_Exchange_Names": "GOLD - COMMODITY EXCHANGE INC.",
-         "Report_Date_as_YYYY-MM-DD": "2024-05-21", "Open_Interest_All": 1},
-    ])
+    raw = _synthetic_raw(
+        [
+            {
+                "Market_and_Exchange_Names": "GOLD - COMMODITY EXCHANGE INC.",
+                "Report_Date_as_YYYY-MM-DD": "2024-05-21",
+                "Open_Interest_All": 1,
+            },
+        ]
+    )
     out = parse_cot_dataframe(raw)
     assert out.loc[0, "timestamp_utc"] == pd.Timestamp("2024-05-24")
     assert out.loc[0, "timestamp_utc"].weekday() == 4

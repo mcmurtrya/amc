@@ -90,7 +90,10 @@ def main() -> int:
 
     token_counts: list[int] = []
     buckets: dict[str, list[tuple[str, str]]] = {
-        "empty": [], "weak": [], "moderate": [], "rich": []
+        "empty": [],
+        "weak": [],
+        "moderate": [],
+        "rich": [],
     }
     id_leak = trailing_id = english = 0
     tld_counter: Counter[str] = Counter()
@@ -126,8 +129,10 @@ def main() -> int:
     def pct(k: int) -> str:
         return f"{100 * k / n:5.1f}%"
 
-    print(f"\nGDELT slug-recovery quality — uniform sample of {n} URLs "
-          f"(seed {args.seed})\n" + "=" * 68)
+    print(
+        f"\nGDELT slug-recovery quality — uniform sample of {n} URLs "
+        f"(seed {args.seed})\n" + "=" * 68
+    )
 
     print("\nRecovery buckets (by recovered token count):")
     counts = Counter(
@@ -144,21 +149,30 @@ def main() -> int:
         print(f"  {label:42s} {counts[b]:6d}  {pct(counts[b])}")
 
     print("\nToken-count percentiles:")
-    for q, lbl in [(0.10, "p10"), (0.25, "p25"), (0.50, "p50"),
-                   (0.75, "p75"), (0.90, "p90"), (0.99, "p99")]:
+    for q, lbl in [
+        (0.10, "p10"),
+        (0.25, "p25"),
+        (0.50, "p50"),
+        (0.75, "p75"),
+        (0.90, "p90"),
+        (0.99, "p99"),
+    ]:
         print(f"  {lbl}: {_percentile(token_counts, q):3d}")
     print(f"  mean: {sum(token_counts) / n:.2f}")
 
     nonempty = n - counts["empty"]
-    print("\nNoise / language (of non-empty recoveries"
-          f", n={nonempty}):")
+    print(f"\nNoise / language (of non-empty recoveries, n={nonempty}):")
     if nonempty:
-        print(f"  digit-bearing junk token (id-leak): {id_leak:6d}  "
-              f"{100 * id_leak / nonempty:5.1f}%")
-        print(f"  trailing bare 'id' token:           {trailing_id:6d}  "
-              f"{100 * trailing_id / nonempty:5.1f}%")
-        print(f"  English-ish (>=1 stopword):         {english:6d}  "
-              f"{100 * english / nonempty:5.1f}%")
+        print(
+            f"  digit-bearing junk token (id-leak): {id_leak:6d}  {100 * id_leak / nonempty:5.1f}%"
+        )
+        print(
+            f"  trailing bare 'id' token:           {trailing_id:6d}  "
+            f"{100 * trailing_id / nonempty:5.1f}%"
+        )
+        print(
+            f"  English-ish (>=1 stopword):         {english:6d}  {100 * english / nonempty:5.1f}%"
+        )
 
     print("\nTop 12 TLDs in sample:")
     for tld, c in tld_counter.most_common(12):

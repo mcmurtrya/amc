@@ -56,9 +56,16 @@ DEFAULT_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 DEFAULT_DTYPE = "fp16"
 SHARD_PREFIX_LEN = 3
 SHARD_LRU_SIZE = 32
-DANGEROUS_PATH_TOKENS = frozenset({
-    "onedrive", "dropbox", "googledrive", "google drive", "icloud", "box sync",
-})
+DANGEROUS_PATH_TOKENS = frozenset(
+    {
+        "onedrive",
+        "dropbox",
+        "googledrive",
+        "google drive",
+        "icloud",
+        "box sync",
+    }
+)
 
 _model_cache: dict[str, object] = {}
 
@@ -72,7 +79,8 @@ def _warn_if_synced(path: Path) -> Path:
             f"directory ({sorted(overlap)}). This will trigger massive sync "
             f"uploads of tens of GB. Set METALS_EMBEDDING_CACHE_DIR to a path "
             f"outside any sync folder.",
-            RuntimeWarning, stacklevel=3,
+            RuntimeWarning,
+            stacklevel=3,
         )
     return path
 
@@ -133,10 +141,12 @@ def _arrow_dtype(dtype: str):
 
 
 def _shard_schema(dtype: str) -> pa.Schema:
-    return pa.schema([
-        ("text_hash", pa.binary(32)),
-        ("embedding", pa.list_(_arrow_dtype(dtype))),
-    ])
+    return pa.schema(
+        [
+            ("text_hash", pa.binary(32)),
+            ("embedding", pa.list_(_arrow_dtype(dtype))),
+        ]
+    )
 
 
 class ParquetEmbeddingCache:
@@ -160,10 +170,7 @@ class ParquetEmbeddingCache:
             tbl = pq.read_table(path, columns=["text_hash", "embedding"])
             hashes = tbl.column("text_hash").to_pylist()
             embeddings = tbl.column("embedding").to_pylist()
-            shard = {
-                h: np.asarray(e, dtype=np.float32)
-                for h, e in zip(hashes, embeddings)
-            }
+            shard = {h: np.asarray(e, dtype=np.float32) for h, e in zip(hashes, embeddings)}
         else:
             shard = {}
         self._lru[prefix] = shard
@@ -223,6 +230,7 @@ def _get_model(model_name: str):
     if model_name in _model_cache:
         return _model_cache[model_name]
     from sentence_transformers import SentenceTransformer
+
     model = SentenceTransformer(model_name)
     _model_cache[model_name] = model
     return model

@@ -41,6 +41,7 @@ def _print_stage(name: str) -> None:
 def run_gdelt(start: str, end: str) -> None:
     _print_stage("gdelt")
     from metals.data.gdelt import refresh
+
     summary = refresh(start_date=start, end_date=end)
     print(f"rows_written = {summary['rows_written']}  (window {start} → {end})")
 
@@ -55,9 +56,7 @@ def _month_bounds(conn, start: str | None = None, end: str | None = None):
     concatenate with no cross-chunk merge, and peak memory is one month of rows
     rather than the whole 63 M-row corpus.
     """
-    lo, hi = conn.execute(
-        "SELECT min(timestamp_utc), max(timestamp_utc) FROM headlines"
-    ).fetchone()
+    lo, hi = conn.execute("SELECT min(timestamp_utc), max(timestamp_utc) FROM headlines").fetchone()
     if lo is None:
         return []
     lo, hi = pd.Timestamp(lo), pd.Timestamp(hi)
@@ -98,18 +97,22 @@ def run_embed(start: str | None = None, end: str | None = None) -> None:
     total_rows = total_new = 0
     for month_start, lower, upper in bounds:
         with connection(read_only=True) as conn:
-            urls = conn.execute(
-                "SELECT article_url FROM headlines "
-                "WHERE timestamp_utc >= ? AND timestamp_utc <= ?",
-                [lower, upper],
-            ).fetchdf()["article_url"].astype(str).tolist()
+            urls = (
+                conn.execute(
+                    "SELECT article_url FROM headlines "
+                    "WHERE timestamp_utc >= ? AND timestamp_utc <= ?",
+                    [lower, upper],
+                )
+                .fetchdf()["article_url"]
+                .astype(str)
+                .tolist()
+            )
         if not urls:
             continue
         n_new = cache_embeddings(urls)
         total_rows += len(urls)
         total_new += n_new
-        print(f"  {month_start:%Y-%m}: {len(urls):>9,} urls  "
-              f"({n_new:>9,} newly encoded)")
+        print(f"  {month_start:%Y-%m}: {len(urls):>9,} urls  ({n_new:>9,} newly encoded)")
     print(f"embeddings cached. rows={total_rows:,}  newly_encoded={total_new:,}")
 
 
@@ -117,6 +120,7 @@ def _load_embeddings_for(df: pd.DataFrame) -> np.ndarray:
     """Helper: load already-cached (or encode) embeddings for a *bounded* frame
     of headlines. Never the full corpus — callers pass one month at a time."""
     from metals.features.embeddings import embed_texts
+
     return embed_texts(df["article_url"].astype(str).tolist())
 
 
@@ -140,8 +144,10 @@ def run_aggregate(start: str | None = None, end: str | None = None) -> None:
         upsert_daily,
     )
 
-    cols = ("timestamp_utc, headline_id, source, themes, article_url, "
-            "tone_overall, tone_positive, tone_negative")
+    cols = (
+        "timestamp_utc, headline_id, source, themes, article_url, "
+        "tone_overall, tone_positive, tone_negative"
+    )
     with connection(read_only=True) as conn:
         bounds = _month_bounds(conn, start, end)
     if not bounds:
@@ -160,22 +166,27 @@ def run_aggregate(start: str | None = None, end: str | None = None) -> None:
             continue
         hl["themes_list"] = hl["themes"].apply(_parse_themes_field)
         hl["timestamp_utc"] = pd.to_datetime(hl["timestamp_utc"])
-        emb = embed_texts(hl["article_url"].astype(str).tolist(),
-                          batch_size=256, use_cache=False)
+        emb = embed_texts(hl["article_url"].astype(str).tolist(), batch_size=256, use_cache=False)
         out = aggregate_daily(hl, embeddings=emb)
         n = upsert_daily(out)  # separate write connection, no overlap with read
         total_rows += len(hl)
         total_written += n
-        print(f"  {month_start:%Y-%m}: {len(hl):>9,} headlines  "
-              f"-> {n:>4} daily 'market' rows  [{total_written:,} total]")
-    print(f"daily_text_features rows written = {total_written:,}  "
-          f"(from {total_rows:,} headlines)")
+        print(
+            f"  {month_start:%Y-%m}: {len(hl):>9,} headlines  "
+            f"-> {n:>4} daily 'market' rows  [{total_written:,} total]"
+        )
+    print(f"daily_text_features rows written = {total_written:,}  (from {total_rows:,} headlines)")
 
 
-def run_topics(method: str = "themes", start: str | None = None,
-               end: str | None = None, *, sample: int = 200_000,
-               min_topic_size: int = 30,
-               nr_topics: int | str | None = None) -> None:
+def run_topics(
+    method: str = "themes",
+    start: str | None = None,
+    end: str | None = None,
+    *,
+    sample: int = 200_000,
+    min_topic_size: int = 30,
+    nr_topics: int | str | None = None,
+) -> None:
     """Per-day topic prevalence -> ``daily_topic_prevalence``.
 
     ``method="themes"`` (default): deterministic, streaming SQL aggregation over
@@ -189,18 +200,21 @@ def run_topics(method: str = "themes", start: str | None = None,
 
     if method == "themes":
         from metals.features.topics import compute_theme_prevalence, theme_topic_map
+
         prev = compute_theme_prevalence(start=start, end=end)
         n = upsert_topic_prevalence(prev)
         tmap = theme_topic_map()
         out_dir = Path("results")
         out_dir.mkdir(parents=True, exist_ok=True)
         map_path = out_dir / "phase3_theme_topic_map.csv"
-        pd.DataFrame(
-            {"topic_id": list(tmap.values()), "theme": list(tmap.keys())}
-        ).sort_values("topic_id").to_csv(map_path, index=False)
+        pd.DataFrame({"topic_id": list(tmap.values()), "theme": list(tmap.keys())}).sort_values(
+            "topic_id"
+        ).to_csv(map_path, index=False)
         n_days = prev["timestamp_utc"].nunique() if not prev.empty else 0
-        print(f"daily_topic_prevalence rows written = {n:,}  "
-              f"(themes-via-SQL, {len(tmap)} themes, {n_days:,} days)")
+        print(
+            f"daily_topic_prevalence rows written = {n:,}  "
+            f"(themes-via-SQL, {len(tmap)} themes, {n_days:,} days)"
+        )
         print(f"theme->topic_id map written to {map_path}")
         return
 
@@ -216,6 +230,7 @@ def run_topics(method: str = "themes", start: str | None = None,
         save_topic_model,
         topic_prevalence_per_day,
     )
+
     where = ["themes IS NOT NULL"]
     params: list = []
     if start is not None:
@@ -262,26 +277,32 @@ def run_context(target_metal: str, train_until: str | None = None) -> pd.DataFra
     if prices.empty or macro.empty:
         raise RuntimeError("prices or macro empty — run Phase 1 ingestion first.")
     has_embeddings = (
-        text is not None and not text.empty
+        text is not None
+        and not text.empty
         and "mean_embedding" in text.columns
         and text["mean_embedding"].notna().any()
     )
     if train_until is None and has_embeddings:
-        print("  WARNING: --train-until not set; the text-embedding PCA will be fit "
-              "on the full sample (look-ahead). Pass --train-until for an honest "
-              "walk-forward run.")
+        print(
+            "  WARNING: --train-until not set; the text-embedding PCA will be fit "
+            "on the full sample (look-ahead). Pass --train-until for an honest "
+            "walk-forward run."
+        )
     ctx, artifacts = build_context(
-        prices=prices, macro_wide=macro, text_daily=text,
-        topic_prevalence=topics, pca_fit_until=train_until,
+        prices=prices,
+        macro_wide=macro,
+        text_daily=text,
+        topic_prevalence=topics,
+        pca_fit_until=train_until,
         config=ContextConfig(target_metal=target_metal),
     )
-    print(f"context shape = {ctx.shape}  cols includes "
-          f"{[c for c in ctx.columns[:6]]} ...")
+    print(f"context shape = {ctx.shape}  cols includes {[c for c in ctx.columns[:6]]} ...")
     return ctx
 
 
-def run_cluster(context: pd.DataFrame, train_until: str | None,
-                model_version: str | None = None) -> str:
+def run_cluster(
+    context: pd.DataFrame, train_until: str | None, model_version: str | None = None
+) -> str:
     _print_stage("cluster")
     from metals.models.clustering import (
         ClusteringConfig,
@@ -352,23 +373,24 @@ def _today_iso() -> str:
 def _latest_model_version() -> str | None:
     """Most recent clustering ``model_version`` persisted to cluster_assignments."""
     from metals.data.db import connection
+
     with connection(read_only=True) as conn:
         row = conn.execute(
-            "SELECT model_version FROM cluster_assignments "
-            "ORDER BY timestamp_utc DESC LIMIT 1"
+            "SELECT model_version FROM cluster_assignments ORDER BY timestamp_utc DESC LIMIT 1"
         ).fetchone()
     return row[0] if row else None
-
 
 
 _LABEL_HEADLINES_PER_DAY = 50
 
 
-def run_label(model_version: str, target_metal: str = "gold",
-              llm_model: str = "claude-haiku-4-5-20251001") -> None:
+def run_label(
+    model_version: str, target_metal: str = "gold", llm_model: str = "claude-haiku-4-5-20251001"
+) -> None:
     """Phase 3 step 3.12 / 3.14 LLM labelling stage. Gated on ANTHROPIC_API_KEY."""
     _print_stage("label")
     import os
+
     if not os.getenv("ANTHROPIC_API_KEY"):
         print("ANTHROPIC_API_KEY not set; skipping label stage.")
         return
@@ -435,35 +457,48 @@ def run_label(model_version: str, target_metal: str = "gold",
     n = upsert_labels(labels, model_version=model_version)
     print(f"upserted {n} cluster labels.")
     for lbl in labels:
-        print(f"  cluster {lbl.cluster_id:>3d} [{lbl.confidence:>6s}]  "
-              f"{lbl.label}")
+        print(f"  cluster {lbl.cluster_id:>3d} [{lbl.confidence:>6s}]  {lbl.label}")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--start", default="2015-02-18", help="GDELT start date.")
     parser.add_argument("--end", default=_today_iso(), help="GDELT end date.")
-    parser.add_argument("--target-metal", default="gold",
-                        choices=["gold", "silver", "platinum", "palladium"])
-    parser.add_argument("--train-until", default=None,
-                        help="ISO date; clustering trains on data up to this date.")
-    parser.add_argument("--topics-method", choices=["themes", "bertopic"],
-                        default="themes",
-                        help="themes = streaming SQL over GDELT themes (default); "
-                             "bertopic = legacy learned topics on a bounded sample.")
-    parser.add_argument("--topics-sample", type=int, default=200_000,
-                        help="Sample size for --topics-method bertopic.")
+    parser.add_argument(
+        "--target-metal", default="gold", choices=["gold", "silver", "platinum", "palladium"]
+    )
+    parser.add_argument(
+        "--train-until", default=None, help="ISO date; clustering trains on data up to this date."
+    )
+    parser.add_argument(
+        "--topics-method",
+        choices=["themes", "bertopic"],
+        default="themes",
+        help="themes = streaming SQL over GDELT themes (default); "
+        "bertopic = legacy learned topics on a bounded sample.",
+    )
+    parser.add_argument(
+        "--topics-sample",
+        type=int,
+        default=200_000,
+        help="Sample size for --topics-method bertopic.",
+    )
     parser.add_argument("--min-topic-size", type=int, default=30)
-    parser.add_argument("--nr-topics", default=None,
-                        help="auto, an int, or None.")
-    parser.add_argument("--only", choices=STAGES, default=None,
-                        help="Run a single stage and exit.")
-    parser.add_argument("--resume-from", choices=STAGES, default=None,
-                        help="Skip stages before this one.")
-    parser.add_argument("--model-version", default=None,
-                        help="Override the auto-generated clustering version label.")
-    parser.add_argument("--llm-model", default="claude-haiku-4-5-20251001",
-                        help="Anthropic model id for the label stage.")
+    parser.add_argument("--nr-topics", default=None, help="auto, an int, or None.")
+    parser.add_argument("--only", choices=STAGES, default=None, help="Run a single stage and exit.")
+    parser.add_argument(
+        "--resume-from", choices=STAGES, default=None, help="Skip stages before this one."
+    )
+    parser.add_argument(
+        "--model-version",
+        default=None,
+        help="Override the auto-generated clustering version label.",
+    )
+    parser.add_argument(
+        "--llm-model",
+        default="claude-haiku-4-5-20251001",
+        help="Anthropic model id for the label stage.",
+    )
     args = parser.parse_args()
 
     nr_topics: int | str | None = args.nr_topics
@@ -485,9 +520,14 @@ def main() -> None:
     if "aggregate" in do:
         run_aggregate(args.start, args.end)
     if "topics" in do:
-        run_topics(method=args.topics_method, start=args.start, end=args.end,
-                   sample=args.topics_sample, min_topic_size=args.min_topic_size,
-                   nr_topics=nr_topics)
+        run_topics(
+            method=args.topics_method,
+            start=args.start,
+            end=args.end,
+            sample=args.topics_sample,
+            min_topic_size=args.min_topic_size,
+            nr_topics=nr_topics,
+        )
 
     context = None
     if "context" in do:
@@ -497,8 +537,7 @@ def main() -> None:
     if "cluster" in do:
         if context is None:
             context = run_context(args.target_metal, train_until=args.train_until)
-        model_version = run_cluster(context, args.train_until,
-                                    model_version=model_version)
+        model_version = run_cluster(context, args.train_until, model_version=model_version)
 
     # analyze before label, matching STAGES order.
     if "analyze" in do:
@@ -513,8 +552,7 @@ def main() -> None:
         if mv is None:
             print("no model_version available for label stage; skipping.")
         else:
-            run_label(mv, target_metal=args.target_metal,
-                      llm_model=args.llm_model)
+            run_label(mv, target_metal=args.target_metal, llm_model=args.llm_model)
 
     print("\ndone.")
 

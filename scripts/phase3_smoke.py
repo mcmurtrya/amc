@@ -27,13 +27,14 @@ SLICE = 2000
 # these against the live schema is what would have caught the document_identifier
 # regression before a multi-hour run.
 STAGE_QUERIES = {
-    "embed":     "SELECT timestamp_utc, headline_id, article_url FROM headlines LIMIT 5",
-    "aggregate": ("SELECT timestamp_utc, headline_id, source, themes, "
-                  "article_url, tone_overall, tone_positive, tone_negative "
-                  "FROM headlines LIMIT 5"),
-    "topics":    "SELECT timestamp_utc, article_url FROM headlines LIMIT 5",
-    "label":     ("SELECT timestamp_utc, article_url AS headline, article_url "
-                  "FROM headlines LIMIT 5"),
+    "embed": "SELECT timestamp_utc, headline_id, article_url FROM headlines LIMIT 5",
+    "aggregate": (
+        "SELECT timestamp_utc, headline_id, source, themes, "
+        "article_url, tone_overall, tone_positive, tone_negative "
+        "FROM headlines LIMIT 5"
+    ),
+    "topics": "SELECT timestamp_utc, article_url FROM headlines LIMIT 5",
+    "label": ("SELECT timestamp_utc, article_url AS headline, article_url FROM headlines LIMIT 5"),
 }
 
 
@@ -71,8 +72,7 @@ def main() -> int:
         assert not out.empty, "aggregate_daily returned no rows"
         print(f"        embedded {emb.shape[0]:,} urls -> dim {emb.shape[1]}")
         print(f"        daily feature rows: {len(out)}  metals: {sorted(out['metal'].unique())}")
-        cols = ["timestamp_utc", "metal", "n_articles",
-                "embedding_dispersion", "mean_tone_overall"]
+        cols = ["timestamp_utc", "metal", "n_articles", "embedding_dispersion", "mean_tone_overall"]
         print(out[cols].head().to_string(index=False))
 
     check("embed->aggregate slice", run_path)

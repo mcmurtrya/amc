@@ -120,7 +120,8 @@ def build_feature_matrix(
         realized = (
             target_returns_1d[ret_col]
             .rolling(window=realized_vol_window, min_periods=realized_vol_window)
-            .std() * ANN
+            .std()
+            * ANN
         )
         # Target window starts target_horizon days ahead and spans
         # realized_vol_window days: [t+h, t+h+w-1]. Equivalently, the

@@ -37,8 +37,8 @@ def _toy_db() -> duckdb.DuckDBPyConnection:
         ("2022-01-01 09:00:00", '["ECON_INFLATION","WB_442_INFLATION"]'),
         ("2022-01-01 15:00:00", '["ECON_INFLATION"]'),
         ("2022-01-02 12:00:00", '["SANCTIONS"]'),
-        ("2022-01-02 13:00:00", "[]"),     # tagged with nothing -> day_total only
-        ("2022-01-02 14:00:00", None),     # null themes        -> day_total only
+        ("2022-01-02 13:00:00", "[]"),  # tagged with nothing -> day_total only
+        ("2022-01-02 14:00:00", None),  # null themes        -> day_total only
         ("2022-01-03 08:00:00", '["NOT_A_CURATED_THEME"]'),  # outside set -> ignored
     ]
     con.executemany("INSERT INTO headlines VALUES (?, ?)", rows)

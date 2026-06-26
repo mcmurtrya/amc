@@ -44,8 +44,13 @@ SUBSETS: dict[str, tuple[str, ...]] = {
     "returns_and_vol": ("_ret_", "_rvol_", "_skew_", "_kurt_", "_maxdd_"),
     "spreads": ("Au_Ag", "Pt_Pd", "Au_Cu", "Au_Oil"),
     "macro": (
-        "real_yield", "breakeven", "dxy_", "vix_", "yield_curve",
-        "baa_spread", "gpr_",
+        "real_yield",
+        "breakeven",
+        "dxy_",
+        "vix_",
+        "yield_curve",
+        "baa_spread",
+        "gpr_",
     ),
 }
 
@@ -100,8 +105,7 @@ def run_one_config(
         preds, result, importances = train_one_split(sub_fm, split)
         log_predictions(rid, preds)
         for imp_type, imp_dict in importances.items():
-            log_feature_importances(rid, split.split_id, imp_dict,
-                                    importance_type=imp_type)
+            log_feature_importances(rid, split.split_id, imp_dict, importance_type=imp_type)
         ics.append(result.ic)
     return {
         "label": label,
@@ -127,21 +131,35 @@ def diagnose_metal(
     min_train_days: int,
 ) -> list[dict]:
     fm = build_feature_matrix(
-        prices=prices, macro_wide=macro_wide,
-        target_ticker=ticker, target_kind="realized_vol",
-        target_horizon=horizon, realized_vol_window=vol_window,
+        prices=prices,
+        macro_wide=macro_wide,
+        target_ticker=ticker,
+        target_kind="realized_vol",
+        target_horizon=horizon,
+        realized_vol_window=vol_window,
     )
-    splits = list(walk_forward_splits(
-        timestamps=fm.X.index, train_start=train_start,
-        val_days=val_days, test_days=test_days, step_days=step_days,
-        min_train_days=min_train_days,
-    ))
+    splits = list(
+        walk_forward_splits(
+            timestamps=fm.X.index,
+            train_start=train_start,
+            val_days=val_days,
+            test_days=test_days,
+            step_days=step_days,
+            min_train_days=min_train_days,
+        )
+    )
     if not splits:
-        return [{
-            "label": "(no splits)", "run_id": None, "n_features": len(fm.X.columns),
-            "ics": [], "ic_mean": float("nan"), "ic_std": float("nan"),
-            "ic_pos_frac": float("nan"),
-        }]
+        return [
+            {
+                "label": "(no splits)",
+                "run_id": None,
+                "n_features": len(fm.X.columns),
+                "ics": [],
+                "ic_mean": float("nan"),
+                "ic_std": float("nan"),
+                "ic_pos_frac": float("nan"),
+            }
+        ]
     out = []
     for label, cols in configurations(list(fm.X.columns)).items():
         out.append(run_one_config(fm, cols, label, splits, ticker))
@@ -160,7 +178,9 @@ def render_report(
     lines.append("## Per-metal subset comparison\n")
     for ticker, rows in per_metal.items():
         lines.append(f"### {ticker}\n")
-        lines.append("| subset | n_features | n_splits | mean IC | std IC | pos fraction | run_id |")
+        lines.append(
+            "| subset | n_features | n_splits | mean IC | std IC | pos fraction | run_id |"
+        )
         lines.append("|---|---:|---:|---:|---:|---:|---|")
         for r in rows:
             n = len(r["ics"])
@@ -213,8 +233,7 @@ def main() -> None:
     prices = load_prices(column="adj_close")
     macro_wide = load_macro()
     if prices.empty or macro_wide.empty:
-        raise RuntimeError("Empty prices or macro DuckDB tables. "
-                           "Refresh ingestion before running.")
+        raise RuntimeError("Empty prices or macro DuckDB tables. Refresh ingestion before running.")
 
     per_metal: dict[str, list[dict]] = {}
     for ticker in args.metals:
@@ -232,10 +251,12 @@ def main() -> None:
             min_train_days=args.min_train_days,
         )
         for r in per_metal[ticker]:
-            print(f"  {r['label']:>22s}  "
-                  f"n_feat={r['n_features']:>3d}  "
-                  f"mean_IC={r['ic_mean']:+.3f}  "
-                  f"pos={r['ic_pos_frac']:.0%}")
+            print(
+                f"  {r['label']:>22s}  "
+                f"n_feat={r['n_features']:>3d}  "
+                f"mean_IC={r['ic_mean']:+.3f}  "
+                f"pos={r['ic_pos_frac']:.0%}"
+            )
 
     out_path = Path(args.out)
     out_path.parent.mkdir(parents=True, exist_ok=True)

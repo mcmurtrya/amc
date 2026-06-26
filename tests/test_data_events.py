@@ -25,7 +25,11 @@ def _read_fixture() -> pd.DataFrame:
 def test_load_fomc_csv_columns():
     df = _read_fixture()
     assert list(df.columns) == [
-        "timestamp_utc", "event_type", "event_id", "metadata", "source",
+        "timestamp_utc",
+        "event_type",
+        "event_id",
+        "metadata",
+        "source",
     ]
     assert (df["event_type"] == "FOMC").all()
     assert (df["source"] == "federalreserve.gov").all()

@@ -67,7 +67,7 @@ class ClusterLabel:
     cluster_id: int
     label: str
     description: str
-    confidence: str   # 'high' | 'medium' | 'low'
+    confidence: str  # 'high' | 'medium' | 'low'
 
 
 @dataclass(frozen=True)
@@ -79,25 +79,30 @@ class ClusterContext:
     representative_dates: list[pd.Timestamp]
     example_headlines: list[str]
     dominant_topics: list[tuple[str, float]]
-    mean_forward_returns: dict[str, float]   # e.g. {"GC=F_fwd_5d": 0.012}
+    mean_forward_returns: dict[str, float]  # e.g. {"GC=F_fwd_5d": 0.012}
 
 
 # ---------------------------------------------------------------------------
 # Pure functions — testable without network
 # ---------------------------------------------------------------------------
 
+
 def build_labeling_prompt(ctx: ClusterContext) -> str:
     """Render a ClusterContext into the user-turn prompt body."""
     dates_str = ", ".join(d.strftime("%Y-%m-%d") for d in ctx.representative_dates[:8])
-    topics_str = "\n".join(
-        f"  - {name} (mean prevalence {prev:.2f})"
-        for name, prev in ctx.dominant_topics[:5]
-    ) or "  - (none observed)"
-    headlines_str = "\n".join(f"  - {h}" for h in ctx.example_headlines[:12]) \
-        or "  - (no headlines available)"
-    returns_str = "\n".join(
-        f"  - {k}: {v:+.2%}" for k, v in list(ctx.mean_forward_returns.items())[:8]
-    ) or "  - (no forward-return data)"
+    topics_str = (
+        "\n".join(
+            f"  - {name} (mean prevalence {prev:.2f})" for name, prev in ctx.dominant_topics[:5]
+        )
+        or "  - (none observed)"
+    )
+    headlines_str = (
+        "\n".join(f"  - {h}" for h in ctx.example_headlines[:12]) or "  - (no headlines available)"
+    )
+    returns_str = (
+        "\n".join(f"  - {k}: {v:+.2%}" for k, v in list(ctx.mean_forward_returns.items())[:8])
+        or "  - (no forward-return data)"
+    )
     return (
         f"Cluster ID: {ctx.cluster_id}\n"
         f"Days in cluster: {ctx.n_days}\n"
@@ -147,9 +152,14 @@ def build_cluster_context(
 ) -> ClusterContext:
     """Assemble the compact context bundle for one cluster."""
     days_in = assignments[assignments["cluster_id"] == cluster_id]
-    days_in = days_in.sort_values("confidence", ascending=False) \
-        if "confidence" in days_in.columns else days_in
-    rep_dates_ts = pd.to_datetime(days_in["timestamp_utc"]).dt.floor("D").head(n_representative).tolist()
+    days_in = (
+        days_in.sort_values("confidence", ascending=False)
+        if "confidence" in days_in.columns
+        else days_in
+    )
+    rep_dates_ts = (
+        pd.to_datetime(days_in["timestamp_utc"]).dt.floor("D").head(n_representative).tolist()
+    )
     n_days = int(len(days_in))
 
     headline_strs: list[str] = []
@@ -190,9 +200,11 @@ def build_cluster_context(
 # LLM call — injectable client so tests don't hit the network
 # ---------------------------------------------------------------------------
 
+
 def _default_anthropic_caller():
     """Build a thunk that calls Anthropic via the official SDK."""
-    from anthropic import Anthropic   # lazy
+    from anthropic import Anthropic  # lazy
+
     client = Anthropic(api_key=os.getenv("ANTHROPIC_API_KEY"))
 
     def _call(system: str, user: str, model: str, max_tokens: int = 400) -> str:
@@ -204,6 +216,7 @@ def _default_anthropic_caller():
         )
         # Anthropic returns a list of content blocks; the first is text.
         return "".join(b.text for b in msg.content if getattr(b, "text", None))
+
     return _call
 
 
@@ -226,9 +239,7 @@ def label_cluster(
             last_err = exc
             if attempt + 1 < max_retries:
                 time.sleep(retry_delay_s * (attempt + 1))
-    raise RuntimeError(
-        f"label_cluster: failed after {max_retries} attempts: {last_err}"
-    )
+    raise RuntimeError(f"label_cluster: failed after {max_retries} attempts: {last_err}")
 
 
 def label_all_clusters(
@@ -248,18 +259,24 @@ def label_all_clusters(
 # Persistence
 # ---------------------------------------------------------------------------
 
+
 def upsert_labels(labels: Iterable[ClusterLabel], model_version: str) -> int:
     """Update cluster_centroids with the LLM-produced labels."""
     rows = list(labels)
     if not rows:
         return 0
-    df = pd.DataFrame([{
-        "model_version": model_version,
-        "cluster_id":    int(r.cluster_id),
-        "label":         r.label,
-        "label_source":  f"llm:{r.confidence}",
-        "description":   r.description,
-    } for r in rows])
+    df = pd.DataFrame(
+        [
+            {
+                "model_version": model_version,
+                "cluster_id": int(r.cluster_id),
+                "label": r.label,
+                "label_source": f"llm:{r.confidence}",
+                "description": r.description,
+            }
+            for r in rows
+        ]
+    )
     with connection() as conn:
         conn.register("incoming_labels", df)
         conn.execute(

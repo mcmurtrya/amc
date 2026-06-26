@@ -35,6 +35,7 @@ from metals.features.embeddings import (
 # Default model + config
 # ---------------------------------------------------------------------------
 
+
 def test_default_model_is_minilm():
     """MiniLM is the new default after the 2026-06-23 storage-driven swap."""
     assert "MiniLM" in DEFAULT_MODEL
@@ -59,6 +60,7 @@ def test_embed_config_fingerprint_changes_with_dtype():
 # ---------------------------------------------------------------------------
 # Cache directory resolution + OneDrive avoidance
 # ---------------------------------------------------------------------------
+
 
 def test_resolve_cache_dir_uses_env_override(tmp_path):
     env = {"METALS_EMBEDDING_CACHE_DIR": str(tmp_path / "custom" / "cache")}
@@ -118,6 +120,7 @@ def test_resolve_cache_dir_default_uses_xdg_cache_on_unix():
 # Sharding and hash math
 # ---------------------------------------------------------------------------
 
+
 def test_hash_hex_is_64_chars():
     assert len(_hash_hex("hello world")) == 64
 
@@ -150,12 +153,13 @@ def test_shard_prefix_distribution_is_roughly_uniform():
 # ParquetEmbeddingCache round-trip
 # ---------------------------------------------------------------------------
 
+
 def test_parquet_cache_write_then_read_round_trip(tmp_path):
     cfg = EmbedConfig(dtype="fp32")  # easier to compare exactly
     cache = ParquetEmbeddingCache(tmp_path, cfg)
     items = {
         _hash_hex("alpha"): np.array([0.1, 0.2, 0.3], dtype=np.float32),
-        _hash_hex("beta"):  np.array([0.4, 0.5, 0.6], dtype=np.float32),
+        _hash_hex("beta"): np.array([0.4, 0.5, 0.6], dtype=np.float32),
         _hash_hex("gamma"): np.array([0.7, 0.8, 0.9], dtype=np.float32),
     }
     n = cache.write_many(items)
@@ -225,6 +229,7 @@ def test_parquet_cache_atomic_write_no_stray_tmp(tmp_path):
 # embed_texts: public API with mocked encoder
 # ---------------------------------------------------------------------------
 
+
 class _FakeModel:
     """Stand-in for a sentence-transformers model."""
 
@@ -233,8 +238,14 @@ class _FakeModel:
         self.encode_calls = 0
         self._counter = 0
 
-    def encode(self, texts, batch_size=64, normalize_embeddings=True,
-               show_progress_bar=False, convert_to_numpy=True):
+    def encode(
+        self,
+        texts,
+        batch_size=64,
+        normalize_embeddings=True,
+        show_progress_bar=False,
+        convert_to_numpy=True,
+    ):
         self.encode_calls += 1
         # Produce deterministic-but-distinct vectors per (text, call-counter).
         out = np.zeros((len(texts), self.dim), dtype=np.float32)
@@ -252,6 +263,7 @@ def isolated_cache(tmp_path, monkeypatch):
     yield tmp_path
     # cleanup module-level model cache so tests don't leak state
     from metals.features import embeddings as emb
+
     emb._model_cache.clear()
 
 

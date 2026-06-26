@@ -39,8 +39,7 @@ def _download_xlsx(url: str = XLSX_URL, timeout: int = 60) -> bytes:
     return resp.content
 
 
-REQUIRED_COLUMNS: tuple[str, ...] = ("Date", "Unscheduled", "FF1", "FF2",
-                                    "ED4", "MPS", "MPS_ORTH")
+REQUIRED_COLUMNS: tuple[str, ...] = ("Date", "Unscheduled", "FF1", "FF2", "ED4", "MPS", "MPS_ORTH")
 SURPRISE_COLUMNS: tuple[str, ...] = ("ff1", "ff2", "ed4", "mps", "mps_orth")
 
 
@@ -52,18 +51,18 @@ def clean_surprises_dataframe(raw: pd.DataFrame) -> pd.DataFrame:
     """
     missing = set(REQUIRED_COLUMNS) - set(raw.columns)
     if missing:
-        raise RuntimeError(
-            f"Bauer-Swanson sheet missing expected columns: {sorted(missing)}"
-        )
-    out = pd.DataFrame({
-        "timestamp_utc": pd.to_datetime(raw["Date"]).dt.tz_localize(None),
-        "is_unscheduled": raw["Unscheduled"].fillna(0).astype(bool),
-        "ff1": pd.to_numeric(raw["FF1"], errors="coerce"),
-        "ff2": pd.to_numeric(raw["FF2"], errors="coerce"),
-        "ed4": pd.to_numeric(raw["ED4"], errors="coerce"),
-        "mps": pd.to_numeric(raw["MPS"], errors="coerce"),
-        "mps_orth": pd.to_numeric(raw["MPS_ORTH"], errors="coerce"),
-    })
+        raise RuntimeError(f"Bauer-Swanson sheet missing expected columns: {sorted(missing)}")
+    out = pd.DataFrame(
+        {
+            "timestamp_utc": pd.to_datetime(raw["Date"]).dt.tz_localize(None),
+            "is_unscheduled": raw["Unscheduled"].fillna(0).astype(bool),
+            "ff1": pd.to_numeric(raw["FF1"], errors="coerce"),
+            "ff2": pd.to_numeric(raw["FF2"], errors="coerce"),
+            "ed4": pd.to_numeric(raw["ED4"], errors="coerce"),
+            "mps": pd.to_numeric(raw["MPS"], errors="coerce"),
+            "mps_orth": pd.to_numeric(raw["MPS_ORTH"], errors="coerce"),
+        }
+    )
     out["source"] = SOURCE_TAG
     # Keep only rows with at least one non-null surprise. The earliest 1988-89
     # rows have NaN MPS because the underlying futures series weren't liquid

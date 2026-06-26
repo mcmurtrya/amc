@@ -22,9 +22,7 @@ from typing import Iterable
 from urllib.parse import urlsplit
 
 # File extensions that appear at the end of a path segment on news sites.
-_EXT_RE = re.compile(
-    r"\.(html?|s?html|ece|chn|cms|amp|aspx?|php|jsp|stm|asp)$", re.IGNORECASE
-)
+_EXT_RE = re.compile(r"\.(html?|s?html|ece|chn|cms|amp|aspx?|php|jsp|stm|asp)$", re.IGNORECASE)
 # Split camelCase ("currenciesNews" -> "currencies News").
 _CAMEL_RE = re.compile(r"(?<=[a-z])(?=[A-Z])")
 _TOKEN_SPLIT_RE = re.compile(r"[-_\s]+")
@@ -52,7 +50,7 @@ def slug_from_url(url: str) -> str:
     if not isinstance(url, str) or not url:
         return ""
     parts = urlsplit(url)
-    if not parts.netloc:        # require scheme://host, else it is not a URL
+    if not parts.netloc:  # require scheme://host, else it is not a URL
         return ""
     segments = [_strip_ext(s) for s in parts.path.split("/") if s]
     if not segments:

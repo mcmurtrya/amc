@@ -101,10 +101,8 @@ def refresh(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Refresh FOMC events table.")
-    parser.add_argument("--path", default=str(DEFAULT_FOMC_CSV),
-                        help="Path to FOMC calendar CSV.")
-    parser.add_argument("--cutoff", default=None,
-                        help="YYYY-MM-DD; drop events after this date.")
+    parser.add_argument("--path", default=str(DEFAULT_FOMC_CSV), help="Path to FOMC calendar CSV.")
+    parser.add_argument("--cutoff", default=None, help="YYYY-MM-DD; drop events after this date.")
     args = parser.parse_args()
     summary = refresh(path=args.path, cutoff=args.cutoff)
     print(f"FOMC rows written: {summary['rows_written']}")

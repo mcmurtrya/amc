@@ -19,23 +19,25 @@ def _toy_prices(n: int = 400, seed: int = 0) -> pd.DataFrame:
     idx = pd.date_range("2020-01-01", periods=n, freq="B")
     cols = ["GC=F", "SI=F", "PL=F", "PA=F"]
     rets = rng.normal(0, 0.01, (n, len(cols)))
-    return pd.DataFrame(1000 * np.exp(np.cumsum(rets, axis=0)),
-                        index=idx, columns=cols)
+    return pd.DataFrame(1000 * np.exp(np.cumsum(rets, axis=0)), index=idx, columns=cols)
 
 
 def _toy_macro(idx: pd.DatetimeIndex, seed: int = 1) -> pd.DataFrame:
     rng = np.random.default_rng(seed)
     n = len(idx)
-    return pd.DataFrame({
-        "DGS10":    3.0 + rng.normal(0, 0.05, n).cumsum() * 0.005,
-        "DGS2":     2.0 + rng.normal(0, 0.05, n).cumsum() * 0.005,
-        "T10YIE":   2.3 + rng.normal(0, 0.02, n).cumsum() * 0.003,
-        "T5YIE":    2.5 + rng.normal(0, 0.02, n).cumsum() * 0.003,
-        "DTWEXBGS": 100 + rng.normal(0, 0.3, n).cumsum() * 0.05,
-        "VIXCLS":   18 + rng.normal(0, 1.5, n),
-        "BAA10Y":   4.0 + rng.normal(0, 0.15, n),
-        "GPR_DAILY": 100 + rng.normal(0, 25, n),
-    }, index=idx)
+    return pd.DataFrame(
+        {
+            "DGS10": 3.0 + rng.normal(0, 0.05, n).cumsum() * 0.005,
+            "DGS2": 2.0 + rng.normal(0, 0.05, n).cumsum() * 0.005,
+            "T10YIE": 2.3 + rng.normal(0, 0.02, n).cumsum() * 0.003,
+            "T5YIE": 2.5 + rng.normal(0, 0.02, n).cumsum() * 0.003,
+            "DTWEXBGS": 100 + rng.normal(0, 0.3, n).cumsum() * 0.05,
+            "VIXCLS": 18 + rng.normal(0, 1.5, n),
+            "BAA10Y": 4.0 + rng.normal(0, 0.15, n),
+            "GPR_DAILY": 100 + rng.normal(0, 25, n),
+        },
+        index=idx,
+    )
 
 
 def test_stack_embeddings_handles_none_rows():
@@ -64,7 +66,8 @@ def test_build_context_minimal_smoke():
     prices = _toy_prices()
     macro = _toy_macro(prices.index)
     ctx, artifacts = build_context(
-        prices=prices, macro_wide=macro,
+        prices=prices,
+        macro_wide=macro,
         config=ContextConfig(target_metal="gold"),
     )
     assert not ctx.empty
@@ -81,19 +84,23 @@ def test_build_context_with_text_features_adds_pca_columns():
     # 32-dim embedding each.
     rng = np.random.default_rng(2)
     n_text = 100
-    sub_idx = prices.index[50:50 + n_text]
-    text = pd.DataFrame({
-        "timestamp_utc": sub_idx,
-        "metal": ["market"] * n_text,
-        "n_articles": rng.integers(5, 50, n_text),
-        "embedding_dispersion": rng.uniform(0.1, 0.4, n_text),
-        "mean_embedding": [rng.normal(0, 1, 32).astype(np.float32) for _ in range(n_text)],
-        "mean_tone_overall": rng.normal(0, 1, n_text),
-        "mean_tone_positive": rng.uniform(0, 2, n_text),
-        "mean_tone_negative": rng.uniform(0, 2, n_text),
-    })
+    sub_idx = prices.index[50 : 50 + n_text]
+    text = pd.DataFrame(
+        {
+            "timestamp_utc": sub_idx,
+            "metal": ["market"] * n_text,
+            "n_articles": rng.integers(5, 50, n_text),
+            "embedding_dispersion": rng.uniform(0.1, 0.4, n_text),
+            "mean_embedding": [rng.normal(0, 1, 32).astype(np.float32) for _ in range(n_text)],
+            "mean_tone_overall": rng.normal(0, 1, n_text),
+            "mean_tone_positive": rng.uniform(0, 2, n_text),
+            "mean_tone_negative": rng.uniform(0, 2, n_text),
+        }
+    )
     ctx, artifacts = build_context(
-        prices=prices, macro_wide=macro, text_daily=text,
+        prices=prices,
+        macro_wide=macro,
+        text_daily=text,
         config=ContextConfig(target_metal="gold", embedding_pca_dims=8),
     )
     assert "n_articles" in ctx.columns
@@ -112,18 +119,20 @@ def test_build_context_pca_fit_until_prevents_lookahead():
     macro = _toy_macro(prices.index)
     rng = np.random.default_rng(7)
     n_text = 100
-    sub_idx = prices.index[50:50 + n_text]
-    boundary = prices.index[100]              # train covers sub_idx[:51]
+    sub_idx = prices.index[50 : 50 + n_text]
+    boundary = prices.index[100]  # train covers sub_idx[:51]
     base_emb = rng.normal(0, 1, (n_text, 16)).astype(np.float32)
 
     def _text(emb: np.ndarray) -> pd.DataFrame:
-        return pd.DataFrame({
-            "timestamp_utc": sub_idx,
-            "metal": ["market"] * n_text,
-            "n_articles": np.full(n_text, 10),
-            "embedding_dispersion": np.full(n_text, 0.2),
-            "mean_embedding": list(emb),
-        })
+        return pd.DataFrame(
+            {
+                "timestamp_utc": sub_idx,
+                "metal": ["market"] * n_text,
+                "n_articles": np.full(n_text, 10),
+                "embedding_dispersion": np.full(n_text, 0.2),
+                "mean_embedding": list(emb),
+            }
+        )
 
     # Frame B differs from A only AFTER the boundary (positions 51..99).
     emb_a = base_emb.copy()
@@ -131,46 +140,53 @@ def test_build_context_pca_fit_until_prevents_lookahead():
     emb_b[51:] = rng.normal(5, 1, (n_text - 51, 16)).astype(np.float32)
 
     cfg = ContextConfig(target_metal="gold", embedding_pca_dims=6)
-    ctx_a, _ = build_context(prices=prices, macro_wide=macro,
-                             text_daily=_text(emb_a), pca_fit_until=boundary, config=cfg)
-    ctx_b, _ = build_context(prices=prices, macro_wide=macro,
-                             text_daily=_text(emb_b), pca_fit_until=boundary, config=cfg)
+    ctx_a, _ = build_context(
+        prices=prices, macro_wide=macro, text_daily=_text(emb_a), pca_fit_until=boundary, config=cfg
+    )
+    ctx_b, _ = build_context(
+        prices=prices, macro_wide=macro, text_daily=_text(emb_b), pca_fit_until=boundary, config=cfg
+    )
 
     pca_cols = [c for c in ctx_a.columns if c.startswith("text_pca_")]
     assert pca_cols
     train_dates = sub_idx[:51]
     a = ctx_a.loc[train_dates, pca_cols].to_numpy()
     b = ctx_b.loc[train_dates, pca_cols].to_numpy()
-    assert np.allclose(a, b, atol=1e-6), \
+    assert np.allclose(a, b, atol=1e-6), (
         "train-window text_pca moved when only future embeddings changed -> leak"
+    )
 
     # Control: with no boundary the PCA is fit on the full sample, so the same
     # future-only change DOES move training-date coordinates.
-    ctx_a0, _ = build_context(prices=prices, macro_wide=macro,
-                              text_daily=_text(emb_a), pca_fit_until=None, config=cfg)
-    ctx_b0, _ = build_context(prices=prices, macro_wide=macro,
-                              text_daily=_text(emb_b), pca_fit_until=None, config=cfg)
+    ctx_a0, _ = build_context(
+        prices=prices, macro_wide=macro, text_daily=_text(emb_a), pca_fit_until=None, config=cfg
+    )
+    ctx_b0, _ = build_context(
+        prices=prices, macro_wide=macro, text_daily=_text(emb_b), pca_fit_until=None, config=cfg
+    )
     a0 = ctx_a0.loc[train_dates, pca_cols].to_numpy()
     b0 = ctx_b0.loc[train_dates, pca_cols].to_numpy()
-    assert not np.allclose(a0, b0, atol=1e-6), \
+    assert not np.allclose(a0, b0, atol=1e-6), (
         "full-sample PCA should leak future info into train-date coordinates"
+    )
 
 
 def test_build_context_rejects_unknown_target_metal():
     prices = _toy_prices(n=100)
     macro = _toy_macro(prices.index)
     with pytest.raises(ValueError, match="Unknown target_metal"):
-        build_context(prices=prices, macro_wide=macro,
-                      config=ContextConfig(target_metal="lead"))
+        build_context(prices=prices, macro_wide=macro, config=ContextConfig(target_metal="lead"))
 
 
 def test_build_context_topic_prevalence_passes_through():
     prices = _toy_prices(n=100)
     macro = _toy_macro(prices.index)
-    topic_wide = pd.DataFrame({
-        "topic_0": np.random.uniform(0, 1, len(prices)),
-        "topic_1": np.random.uniform(0, 1, len(prices)),
-    }, index=prices.index)
-    ctx, _ = build_context(prices=prices, macro_wide=macro,
-                           topic_prevalence=topic_wide)
+    topic_wide = pd.DataFrame(
+        {
+            "topic_0": np.random.uniform(0, 1, len(prices)),
+            "topic_1": np.random.uniform(0, 1, len(prices)),
+        },
+        index=prices.index,
+    )
+    ctx, _ = build_context(prices=prices, macro_wide=macro, topic_prevalence=topic_wide)
     assert "topic_0" in ctx.columns and "topic_1" in ctx.columns

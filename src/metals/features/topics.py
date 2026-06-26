@@ -21,9 +21,7 @@ import pandas as pd
 
 from metals.data.db import connection
 
-MODEL_DIR = (
-    Path(__file__).resolve().parents[3] / "data" / "processed" / "topic_models"
-)
+MODEL_DIR = Path(__file__).resolve().parents[3] / "data" / "processed" / "topic_models"
 
 # ---------------------------------------------------------------------------
 # Themes-via-SQL topic prevalence (Phase 3 default).
@@ -125,6 +123,7 @@ def compute_theme_prevalence(
         df = conn.execute(query, params).fetchdf()
     else:
         from metals.data.db import connection
+
         with connection(read_only=True) as c:
             df = c.execute(query, params).fetchdf()
     if df.empty:
@@ -249,10 +248,7 @@ def topic_prevalence_per_day(
     if df.empty:
         return pd.DataFrame(columns=["timestamp_utc", "topic_id", "prevalence"])
 
-    counts = (
-        df.groupby(["timestamp_utc", "topic_id"]).size()
-          .rename("n").reset_index()
-    )
+    counts = df.groupby(["timestamp_utc", "topic_id"]).size().rename("n").reset_index()
     day_totals = counts.groupby("timestamp_utc")["n"].transform("sum")
     counts["prevalence"] = counts["n"] / day_totals
     return counts[["timestamp_utc", "topic_id", "prevalence"]]

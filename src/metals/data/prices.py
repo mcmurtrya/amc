@@ -61,8 +61,12 @@ def fetch_yfinance(
 
     frames: list[pd.DataFrame] = []
     col_rename = {
-        "Open": "open", "High": "high", "Low": "low",
-        "Close": "close", "Adj Close": "adj_close", "Volume": "volume",
+        "Open": "open",
+        "High": "high",
+        "Low": "low",
+        "Close": "close",
+        "Adj Close": "adj_close",
+        "Volume": "volume",
     }
     # Multi-ticker downloads return a column MultiIndex; single returns flat.
     if isinstance(raw.columns, pd.MultiIndex):
@@ -79,15 +83,22 @@ def fetch_yfinance(
 
     if not frames:
         return pd.DataFrame(
-            columns=["timestamp_utc", "ticker", "open", "high", "low",
-                     "close", "adj_close", "volume"]
+            columns=[
+                "timestamp_utc",
+                "ticker",
+                "open",
+                "high",
+                "low",
+                "close",
+                "adj_close",
+                "volume",
+            ]
         )
 
     df = pd.concat(frames, ignore_index=True)
     df["timestamp_utc"] = pd.to_datetime(df["timestamp_utc"], utc=True).dt.tz_localize(None)
     df = df.dropna(subset=["close"])
-    return df[["timestamp_utc", "ticker", "open", "high", "low",
-               "close", "adj_close", "volume"]]
+    return df[["timestamp_utc", "ticker", "open", "high", "low", "close", "adj_close", "volume"]]
 
 
 def upsert_prices(df: pd.DataFrame) -> int:
@@ -159,8 +170,10 @@ def main() -> None:
     print(f"Rows written:      {summary['rows_written']}")
     print(f"Date range:        {summary['date_range']}")
     if summary["low_coverage_rows"]:
-        print(f"WARNING: {len(summary['low_coverage_rows'])} (ticker, year) "
-              f"buckets under 95% expected coverage.")
+        print(
+            f"WARNING: {len(summary['low_coverage_rows'])} (ticker, year) "
+            f"buckets under 95% expected coverage."
+        )
 
 
 if __name__ == "__main__":

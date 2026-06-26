@@ -38,9 +38,7 @@ from metals.data.db import connection
 load_dotenv()
 SOURCE_TAG = "gdelt_gkg"
 TABLE = "gdelt-bq.gdeltv2.gkg_partitioned"
-THEMES_CONFIG = (
-    Path(__file__).resolve().parents[3] / "configs" / "gdelt_themes.yaml"
-)
+THEMES_CONFIG = Path(__file__).resolve().parents[3] / "configs" / "gdelt_themes.yaml"
 
 
 def load_themes(path: Path | str = THEMES_CONFIG) -> list[str]:
@@ -102,12 +100,24 @@ def parse_gkg_rows(raw: pd.DataFrame, themes_filter: list[str]) -> pd.DataFrame:
     network access.
     """
     if raw.empty:
-        return raw.assign(**{c: pd.Series(dtype="object") for c in (
-            "timestamp_utc", "headline_id", "source",
-            "themes", "article_url",
-            "tone_overall", "tone_positive", "tone_negative",
-            "tone_polarity", "tone_ard", "tone_sgrd",
-        )}).iloc[:0]
+        return raw.assign(
+            **{
+                c: pd.Series(dtype="object")
+                for c in (
+                    "timestamp_utc",
+                    "headline_id",
+                    "source",
+                    "themes",
+                    "article_url",
+                    "tone_overall",
+                    "tone_positive",
+                    "tone_negative",
+                    "tone_polarity",
+                    "tone_ard",
+                    "tone_sgrd",
+                )
+            }
+        ).iloc[:0]
 
     df = raw.copy()
     df["timestamp_utc"] = pd.to_datetime(
@@ -124,7 +134,7 @@ def parse_gkg_rows(raw: pd.DataFrame, themes_filter: list[str]) -> pd.DataFrame:
             return []
         seen: list[str] = []
         for token in s.split(";"):
-            code = token.split(",")[0]   # strip offset suffix
+            code = token.split(",")[0]  # strip offset suffix
             if code and code in theme_set and code not in seen:
                 seen.append(code)
         return seen
@@ -147,15 +157,15 @@ def parse_gkg_rows(raw: pd.DataFrame, themes_filter: list[str]) -> pd.DataFrame:
         return out
 
     tone = df["v2tone"].map(_parse_tone)
-    df["tone_overall"]  = tone.map(lambda d: d.get("overall"))
+    df["tone_overall"] = tone.map(lambda d: d.get("overall"))
     df["tone_positive"] = tone.map(lambda d: d.get("positive"))
     df["tone_negative"] = tone.map(lambda d: d.get("negative"))
     df["tone_polarity"] = tone.map(lambda d: d.get("polarity"))
-    df["tone_ard"]      = tone.map(lambda d: d.get("ard"))
-    df["tone_sgrd"]     = tone.map(lambda d: d.get("sgrd"))
+    df["tone_ard"] = tone.map(lambda d: d.get("ard"))
+    df["tone_sgrd"] = tone.map(lambda d: d.get("sgrd"))
 
     df["article_url"] = df["document_identifier"].astype("string")
-    df["source"]      = df["source_common_name"].fillna("").astype("string")
+    df["source"] = df["source_common_name"].fillna("").astype("string")
     # Stable id = source + URL hash. We use the URL itself for traceability;
     # collisions in the same timestamp are extremely unlikely.
     df["headline_id"] = (
@@ -168,10 +178,17 @@ def parse_gkg_rows(raw: pd.DataFrame, themes_filter: list[str]) -> pd.DataFrame:
     # narrowing to the output columns.
     df = df[df["themes_list"].map(bool)]
     out_cols = [
-        "timestamp_utc", "headline_id", "source",
-        "themes", "article_url",
-        "tone_overall", "tone_positive", "tone_negative",
-        "tone_polarity", "tone_ard", "tone_sgrd",
+        "timestamp_utc",
+        "headline_id",
+        "source",
+        "themes",
+        "article_url",
+        "tone_overall",
+        "tone_positive",
+        "tone_negative",
+        "tone_polarity",
+        "tone_ard",
+        "tone_sgrd",
     ]
     out = df[out_cols].dropna(subset=["timestamp_utc", "headline_id"])
     return out.reset_index(drop=True)
@@ -187,7 +204,7 @@ def fetch_gkg(start_date: date | str, end_date: date | str) -> pd.DataFrame:
             "GOOGLE_APPLICATION_CREDENTIALS not set. Configure GCP service "
             "account JSON in .env before fetching GDELT."
         )
-    from google.cloud import bigquery   # noqa: WPS433 — lazy import
+    from google.cloud import bigquery  # noqa: WPS433 — lazy import
 
     themes = load_themes()
     query = build_query(start_date, end_date, themes)
@@ -254,9 +271,9 @@ def refresh(
         nxt = min(cur + pd.Timedelta(days=chunk_days - 1), ed)
         df = fetch_gkg(cur.date(), nxt.date())
         n = upsert_headlines(df)
-        out_summary["chunks"].append({"start": cur.date().isoformat(),
-                                      "end": nxt.date().isoformat(),
-                                      "rows": n})
+        out_summary["chunks"].append(
+            {"start": cur.date().isoformat(), "end": nxt.date().isoformat(), "rows": n}
+        )
         out_summary["rows_written"] += n
         print(f"  {cur.date()} -> {nxt.date()}: {n} rows", flush=True)
         cur = nxt + pd.Timedelta(days=1)
@@ -266,9 +283,10 @@ def refresh(
 def main() -> None:
     parser = argparse.ArgumentParser(description="Refresh GDELT GKG headlines.")
     parser.add_argument("--start", required=True, help="YYYY-MM-DD")
-    parser.add_argument("--end",   required=True, help="YYYY-MM-DD")
-    parser.add_argument("--chunk-days", type=int, default=7,
-                        help="Days per BigQuery chunk (default 7).")
+    parser.add_argument("--end", required=True, help="YYYY-MM-DD")
+    parser.add_argument(
+        "--chunk-days", type=int, default=7, help="Days per BigQuery chunk (default 7)."
+    )
     args = parser.parse_args()
     s = refresh(args.start, args.end, chunk_days=args.chunk_days)
     print(f"\nTotal rows: {s['rows_written']}")

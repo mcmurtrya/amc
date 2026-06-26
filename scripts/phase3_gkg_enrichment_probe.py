@@ -57,7 +57,7 @@ def build_probe_query(start: str, end: str) -> str:
     enrichment columns instead of the ingested ones."""
     base = build_query(start, end, load_themes())
     # Reuse the WHERE clause verbatim; swap the SELECT list.
-    where = base[base.index("FROM"):]
+    where = base[base.index("FROM") :]
     return (
         "SELECT\n"
         "    DocumentIdentifier AS url,\n"
@@ -97,8 +97,11 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--start", default="2024-06-01")
     ap.add_argument("--end", default="2024-06-03", help="inclusive; short window keeps cost low")
-    ap.add_argument("--execute", action="store_true",
-                    help="download and compute coverage stats (else dry-run only)")
+    ap.add_argument(
+        "--execute",
+        action="store_true",
+        help="download and compute coverage stats (else dry-run only)",
+    )
     ap.add_argument("--examples", type=int, default=12)
     args = ap.parse_args()
 
@@ -114,9 +117,11 @@ def main() -> int:
     tb = dry.total_bytes_processed / 1e12
     billed = max(0.0, tb - FREE_TB_PER_MONTH) * ONDEMAND_USD_PER_TB
     print(f"[dry-run] scans {gb:,.2f} GB  ({tb:.4f} TB)")
-    print(f"[dry-run] cost: $0.00 if under the 1 TB/month free tier; "
-          f"${tb * ONDEMAND_USD_PER_TB:,.2f} at full on-demand "
-          f"(${billed:,.2f} once the free TB is used up)\n")
+    print(
+        f"[dry-run] cost: $0.00 if under the 1 TB/month free tier; "
+        f"${tb * ONDEMAND_USD_PER_TB:,.2f} at full on-demand "
+        f"(${billed:,.2f} once the free TB is used up)\n"
+    )
 
     if not args.execute:
         print("Dry-run only. Re-run with --execute to download and measure coverage.")
@@ -139,8 +144,10 @@ def main() -> int:
     print(f"  rows with <PAGE_TITLE>: {has_title.sum():,}  ({100 * has_title.mean():.1f}%)")
     have = titles[has_title]
     if len(have):
-        print(f"  median title length: {int(have.str.len().median())} chars; "
-              f"mean words: {have.str.split().map(len).mean():.1f}")
+        print(
+            f"  median title length: {int(have.str.len().median())} chars; "
+            f"mean words: {have.str.split().map(len).mean():.1f}"
+        )
 
     print("\n[B] Source language (TranslationInfo; 'eng' = English-original):")
     lc = Counter(langs)
@@ -166,11 +173,15 @@ def main() -> int:
     degen = slug_tokens <= 2
     if degen.any():
         rescued = (degen & has_title).sum()
-        print("[D] PAGE_TITLE rescue rate on degenerate-slug rows "
-              "(the rows gating would otherwise drop from the embedding):")
-        print(f"  degenerate slugs: {degen.sum():,}  "
-              f"of which have a PAGE_TITLE: {rescued:,}  "
-              f"({100 * rescued / max(1, degen.sum()):.1f}%)")
+        print(
+            "[D] PAGE_TITLE rescue rate on degenerate-slug rows "
+            "(the rows gating would otherwise drop from the embedding):"
+        )
+        print(
+            f"  degenerate slugs: {degen.sum():,}  "
+            f"of which have a PAGE_TITLE: {rescued:,}  "
+            f"({100 * rescued / max(1, degen.sum()):.1f}%)"
+        )
 
     return 0
 

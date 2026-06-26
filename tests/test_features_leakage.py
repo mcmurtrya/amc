@@ -75,9 +75,7 @@ def test_target_strictly_future_accepts_full_forward_window():
     feats = pd.DataFrame({"x": np.arange(30)}, index=idx)
     src = pd.Series(np.arange(30, dtype=float), index=idx)
     target_ok = src.shift(-(5 + 20 - 1))  # 24 NaN tail rows
-    assert_target_strictly_future(
-        feats, target_ok, target_horizon=5, min_nan_tail=5 + 20 - 1
-    )
+    assert_target_strictly_future(feats, target_ok, target_horizon=5, min_nan_tail=5 + 20 - 1)
 
 
 def test_target_horizon_must_be_positive():

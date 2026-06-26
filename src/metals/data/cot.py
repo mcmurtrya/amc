@@ -41,9 +41,9 @@ ZIP_URL_TMPL = "https://www.cftc.gov/files/dea/history/fut_disagg_txt_{year}.zip
 # the match to the start of the (stripped) market name so we don't pick up
 # E-MINI or MICRO variants, whose names also contain the underlying metal.
 METAL_NAME_PATTERNS: dict[str, str] = {
-    "gold":      "GOLD - COMMODITY EXCHANGE INC.",
-    "silver":    "SILVER - COMMODITY EXCHANGE INC.",
-    "platinum":  "PLATINUM - NEW YORK MERCANTILE EXCHANGE",
+    "gold": "GOLD - COMMODITY EXCHANGE INC.",
+    "silver": "SILVER - COMMODITY EXCHANGE INC.",
+    "platinum": "PLATINUM - NEW YORK MERCANTILE EXCHANGE",
     "palladium": "PALLADIUM - NEW YORK MERCANTILE EXCHANGE",
 }
 
@@ -72,9 +72,7 @@ def release_date(report_date: pd.Timestamp) -> pd.Timestamp:
     """
     report_date = pd.Timestamp(report_date).normalize()
     nominal_friday = report_date + TUE_TO_FRI_OFFSET
-    in_week_holidays = _US_CALENDAR.holidays(
-        report_date + pd.Timedelta(days=1), nominal_friday
-    )
+    in_week_holidays = _US_CALENDAR.holidays(report_date + pd.Timedelta(days=1), nominal_friday)
     delayed = nominal_friday + len(in_week_holidays) * _US_BDAY
     return _US_BDAY.rollforward(delayed)
 
@@ -132,9 +130,7 @@ def parse_cot_dataframe(raw: pd.DataFrame, year_label: int | str = "?") -> pd.Da
         next((c for c in df.columns if "Report_Date_as_MM_DD_YYYY" in c), None),
     )
     if date_col is None:
-        raise RuntimeError(
-            f"COT {year_label}: could not find Report_Date_as_YYYY-MM-DD column."
-        )
+        raise RuntimeError(f"COT {year_label}: could not find Report_Date_as_YYYY-MM-DD column.")
     report_date = pd.to_datetime(df[date_col]).dt.tz_localize(None)
     # Holiday-aware release date. Compute once per unique report date (there are
     # only ~weekly distinct dates) then map back, to avoid per-row calendar work.
@@ -143,17 +139,17 @@ def parse_cot_dataframe(raw: pd.DataFrame, year_label: int | str = "?") -> pd.Da
     df["timestamp_utc"] = report_date.map(release_lookup)
 
     rename = {
-        "Prod_Merc_Positions_Long_All":  "producer_long",
+        "Prod_Merc_Positions_Long_All": "producer_long",
         "Prod_Merc_Positions_Short_All": "producer_short",
-        "Swap_Positions_Long_All":       "swap_long",
-        "Swap__Positions_Short_All":     "swap_short",
-        "M_Money_Positions_Long_All":    "managed_money_long",
-        "M_Money_Positions_Short_All":   "managed_money_short",
+        "Swap_Positions_Long_All": "swap_long",
+        "Swap__Positions_Short_All": "swap_short",
+        "M_Money_Positions_Long_All": "managed_money_long",
+        "M_Money_Positions_Short_All": "managed_money_short",
         "Other_Rept_Positions_Long_All": "other_reportable_long",
-        "Other_Rept_Positions_Short_All":"other_reportable_short",
-        "NonRept_Positions_Long_All":    "non_reportable_long",
-        "NonRept_Positions_Short_All":   "non_reportable_short",
-        "Open_Interest_All":             "open_interest",
+        "Other_Rept_Positions_Short_All": "other_reportable_short",
+        "NonRept_Positions_Long_All": "non_reportable_long",
+        "NonRept_Positions_Short_All": "non_reportable_short",
+        "Open_Interest_All": "open_interest",
     }
     df = df.rename(columns=rename)
 
@@ -167,11 +163,16 @@ def parse_cot_dataframe(raw: pd.DataFrame, year_label: int | str = "?") -> pd.Da
     df["commercial_short"] = df["producer_short"] + df["swap_short"]
 
     needed = [
-        "timestamp_utc", "metal",
-        "commercial_long", "commercial_short",
-        "managed_money_long", "managed_money_short",
-        "other_reportable_long", "other_reportable_short",
-        "non_reportable_long", "non_reportable_short",
+        "timestamp_utc",
+        "metal",
+        "commercial_long",
+        "commercial_short",
+        "managed_money_long",
+        "managed_money_short",
+        "other_reportable_long",
+        "other_reportable_short",
+        "non_reportable_long",
+        "non_reportable_short",
         "open_interest",
     ]
     out = df[needed].copy()
@@ -261,8 +262,7 @@ def main() -> None:
     args = parser.parse_args()
     summary = refresh(start_year=args.start_year, end_year=args.end_year)
     print(f"\nTotal rows: {summary['rows_written']}")
-    print(f"Years:      {args.start_year}-{summary['end_year']}"
-          f" (skipped {summary['skipped']})")
+    print(f"Years:      {args.start_year}-{summary['end_year']} (skipped {summary['skipped']})")
 
 
 if __name__ == "__main__":
