@@ -25,6 +25,14 @@ gold, silver, platinum, palladium all have `n_articles=24007`,
 `embedding_dispersion=0.458`, `mean_tone_overall=-0.787`, and **byte-identical
 `mean_embedding`**.
 
+**Independently re-verified (2026-06-25)** against the full corpus, not just the
+one aggregated day: across all 63,267,343 rows / 2,315 days the gold-only count is
+**0**, so the four metals' article sets — and therefore every aggregated text
+feature — are identical on *every* day. The mechanism is theme saturation: every
+`ECON_GOLDPRICE` article carries **≥2 curated themes** (minimum observed = 2)
+because `WB_1699_METAL_ORE_MINING` (56.7% of the corpus, mapped to all four
+metals) tags essentially every gold-price article.
+
 **Why:** `THEME_TO_METALS` maps only `ECON_GOLDPRICE` to gold-only; all 13 other
 curated themes map to all four metals. Since `ECON_GOLDPRICE` never appears
 alone, the per-metal split collapses.
@@ -35,9 +43,13 @@ attribution in Phase 4/5 would be spurious.
 
 **Options:**
 - **(a)** Collapse text features to a single shared daily *news-state* series and
-  drop the metal axis on text (simpler, honest, 4× less storage). Recommended.
-- **(b)** Build genuine per-metal signal from article **title/body** keyword
-  matching — requires a real text source (see §3).
+  drop the metal axis on text. **Recommended, and exactly lossless** — the four
+  series are byte-identical, and the one gold-specific scalar that exists
+  (`ECON_GOLDPRICE` prevalence) already lives in the shared `daily_topic_prevalence`.
+  Also removes the 4× metal fan-out in `aggregate_daily` (the GPU encode is unaffected).
+- **(b)** Build a genuine per-metal signal from a real text source. The cheapest
+  real path is *not* article-URL/body keyword matching on this corpus — see the
+  verified source menu in **§5** (GDELT DOC 2.0 API titles + mining.com RSS).
 
 Reproduce:
 ```sql
@@ -88,9 +100,12 @@ This is why **themes-via-SQL is the correct Phase 3 default**, and why the
 `mean_embedding` / `embedding_dispersion` features deserve skepticism.
 
 **Recommendation:** Lean on **themes + tone**. For real semantics (and the
-per-metal signal from §1), add a text source — Kitco RSS (per the roadmap) or
-resolve URLs → titles. That is also the only thing that makes BERTopic worth its
-cost.
+per-metal signal from §1), add a source that carries the article **title** —
+which GKG lacks entirely. The lowest-friction fix is the **GDELT DOC 2.0 API**
+(returns titles + supports per-metal keyword queries, back to 2017), supplemented
+by **mining.com** per-metal RSS; see the verified menu in **§5**. (The roadmap
+names Kitco, but Kitco exposes no per-metal feeds — mining.com does.) Real titles
+are also the only thing that makes embeddings/BERTopic worth their cost.
 
 ---
 
@@ -106,9 +121,17 @@ cost.
   URL rows, so `n_articles` / prevalence measure *volume of coverage*, not number
   of events. Fine as an attention proxy; dedup by domain / near-duplicate URL for
   story-level counts.
+- **Corpus is aggregator-heavy; quality is uneven.** The top outlets are
+  Chinese/Vietnamese/Indian finance aggregators (`sina.com.cn` 735K, `eastmoney.com`
+  482K, `baomoi.com` 463K, `cnfol.com` 447K); `reuters.com` is only #15 (209K). Of
+  48,539 distinct sources, the top 1,000 hold 54.7%. A **source whitelist** of
+  reputable finance/metals outlets is a cheap quality lever. Specialist metals
+  outlets are thin or sparse: `kitco` appears on only 441 / 2,315 days, `mining.com`
+  on 2,130 days (but supply-focused).
 - **Tone is a free precomputed sentiment signal** (V2Tone columns:
-  `tone_overall/positive/negative/polarity/ard/sgrd`) — arguably the best cheap
-  news feature alongside theme prevalence; no embedding needed.
+  `tone_overall/positive/negative/polarity/ard/sgrd`) — present on **100%** of rows
+  (mean −0.61, sd 3.66) — arguably the best cheap news feature alongside theme
+  prevalence; no embedding needed.
 - **Leakage scrutiny for text.** Confirm `timestamp_utc` is first-seen/publish
   time and that a day's text strictly precedes the forward returns used in
   clustering / local projections — the price pipeline has a leakage guard; give
@@ -140,13 +163,194 @@ Theme distribution (per article, % of 63.3M):
 
 ---
 
+## 5. Options for a better text signal (verified)
+
+§1 says the metal axis is dead and §3 says the embedded docs are URLs. This is the
+verified menu for getting a *real* signal, split by goal. Grounded against the GKG
+2.1 codebook, a live GDELT DOC 2.0 API probe, and the live DuckDB.
+
+**Correction to an earlier hypothesis.** `AllNames` / `V2Persons` /
+`V2Organizations` are **proper nouns only** — the common nouns "silver / platinum /
+palladium / PGM / catalytic converter" do **not** appear in them. The only GKG
+fields carrying raw body strings are `V2.1Amounts.Object` and `V2.1Quotations.Quote`,
+both sparse and noisy. **There is no clean per-metal axis anywhere inside GKG.** The
+cleanest per-metal text in all of GDELT is the **DOC 2.0 API article title**, which
+GKG (and the GEG) lack entirely.
+
+### Goal A — a genuine per-metal signal
+
+| Option | Per-metal | History | Effort | Verdict |
+|---|---|---|---|---|
+| **GDELT DOC 2.0 API** (titles + keyword query) | yes | 2017→now | med | **Recommend.** Free HTTP API (*not* BigQuery). Returns real titles + lets you query `"platinum"`, `"palladium price"`. Fixes §1 *and* §3 at once. Catch: rolling ~3-mo default window → windowed/throttled backfill; no per-article tone (aggregate `TimelineTone` only). |
+| **mining.com per-metal RSS** | yes | forward-only | low | **Recommend.** `mining.com/tag/{gold,silver,platinum,palladium}/feed/`, real titles, republish-with-link-back license. Supply-side editorial (S. Africa PGM strikes, autocatalyst demand) = exactly where Pt/Pd diverge from gold. Metal known from the feed — no keyword guessing. |
+| **WPIC / WGC / Silver Institute** quarterly | yes | 2014/2010→ | med | **Consider.** Authoritative per-metal *fundamentals* + commentary, but quarterly/annual → low-freq overlay (lag to release date), not a daily feature. |
+| GKG `Amounts.Object` / `Quotations.Quote` regex | weak | re-pull | med | **Test.** Only genuine per-metal strings inside GKG; sparse/messy but cheap to bolt onto a re-pull and test before committing. |
+| URL→title scrape + FinBERT on the 1.25M metal-URL subset | weak | n/a | high | **Avoid as primary.** DOC API hands you the same titles without scraping 1.25M URLs (link rot, ToS, dedup). |
+| `AllNames` / org miner watchlist | weak | re-pull | high | **Avoid.** Proper-noun only; high effort, thin payoff. |
+
+### Goal B — better sentiment / semantics (still shared across metals)
+
+| Option | Verdict |
+|---|---|
+| Lean on **V2Tone + themes** (already 100% coverage) + **source whitelist** + story-dedup | **Do now (free, in-hand).** Tone is reduced to 3 means today; add dispersion / percentiles / polarity. Whitelisting reputable outlets cuts the aggregator noise (§4). |
+| **V2GCAM** (curated subset of ~2,300 dims) | **Consider.** Richer than V2Tone but document-level → still identical across metals; pull 10–30 dims, not all 2,300. |
+| **GEG `geg_gcnlapi`** (Google-NL entities + sentiment) | **Only if needed.** Cleaner sentiment/entities but a second large BigQuery scan, no titles, weak per-metal. |
+
+**Skip:** free news APIs (NewsAPI / GNews / Marketaux / Alpha Vantage) — effectively
+forward-only; Alpha Vantage's news history starts ~2022-03, so none align to the
+2020+ corpus.
+
+### The strategic point
+
+Caveats §1 (no per-metal), §2 (coverage), and §3 (URLs not titles) **share one
+solution**: re-source the text from the **GDELT DOC 2.0 API** (per-metal keyword →
+real titles → FinBERT), backfilled 2017→present, with **mining.com RSS** forward for
+the PGM supply axis and **WPIC/WGC** as a quarterly fundamentals overlay. That turns
+the text stream from "shared theme/tone counts on URL slugs" into a genuine per-metal
+headline corpus — and it is almost entirely off-BigQuery (DOC API + RSS are free HTTP).
+
+*Uncertain (not hard-confirmed):* DOC-API exact rate limits (undocumented — throttle
+empirically); mining.com RSS archive depth (likely shallow → forward-only); BigQuery
+re-ingest byte costs (no creds configured, so modeled not measured — see §6).
+
+### Reproduce (run against the live DuckDB)
+```sql
+-- §1 mechanism: ECON_GOLDPRICE never appears as the sole curated theme
+SELECT count(*) FROM headlines
+WHERE list_contains(from_json(themes,'["VARCHAR"]'),'ECON_GOLDPRICE')
+  AND len(from_json(themes,'["VARCHAR"]')) = 1;          -- 0
+
+-- corpus is syndication-heavy: top outlets are CN/VN/IN aggregators, reuters #15
+SELECT source, count(*) c FROM headlines GROUP BY 1 ORDER BY 2 DESC LIMIT 15;
+
+-- per-metal URL keyword probe: numerically present, too noisy/sparse to trust
+SELECT
+  count(*) FILTER (WHERE lower(article_url) LIKE '%silver%')    AS silver,     -- 226,606
+  count(*) FILTER (WHERE lower(article_url) LIKE '%platinum%')  AS platinum,   --  11,972
+  count(*) FILTER (WHERE lower(article_url) LIKE '%palladium%') AS palladium   --   4,173
+FROM headlines;   -- palladium dominated by the heraldpalladium.com newspaper domain
+```
+
+---
+
+## 6. BigQuery cost of the §5 plan
+
+**Anchor (measured).** The 5-column GKG query (`DATE`, `SourceCommonName`,
+`DocumentIdentifier`, `V2Themes`, `V2Tone`), partition-pruned, scanned **0.65 TB for
+57 months** (2021-09→present) on a free dry run — i.e. **~11 GB/month, ~0.14 TB/year**
+(journal, 2026-06-25). Pricing: **$6.25/TB**, first **1 TiB/month free**
+(`scripts/backfill_gdelt.py`). On-demand bills **bytes scanned in referenced
+columns** after partition pruning — the `REGEXP_CONTAINS` theme filter does *not*
+reduce bytes, so cost = (columns) × (date range), **not** (rows returned).
+
+**The recommended plan is ≈ $0 in BigQuery — by design.** The per-metal fix is the
+**DOC 2.0 API** (free HTTP, *not* BigQuery); mining.com RSS and WPIC/WGC are also
+off-BigQuery. The only GKG backfill the plan needs — **2015–2019 (~0.5 TB)** — fits
+under the 1 TB/month free tier.
+
+| Component | BigQuery? | Modeled scan | Modeled cost |
+|---|---|---|---|
+| Collapse metal axis (§1a) | no | — | $0 |
+| **DOC 2.0 API per-metal re-source (2017→)** | **no (free HTTP)** | — | **$0** |
+| mining.com RSS / WPIC / WGC overlay | no | — | $0 |
+| 2015–2019 GKG backfill (§2) | yes | ~0.5 TB | ~$0 (< free tier) |
+| *opt.* re-pull + `Amounts` / `Quotations` (per-metal test) | yes | ~0.7–2 TB extra | ~$0–7 |
+| *opt.* re-pull + `GCAM` (sentiment upgrade) | yes | ~2.5–4 TB | ~$0–25 (≈$0 if spread) |
+| *opt., not recommended* GEG `geg_gcnlapi` | yes | multi-TB | tens of $ — dry-run first |
+
+**Notes / confidence.** No BigQuery creds are configured (`.env`
+`GOOGLE_APPLICATION_CREDENTIALS` is empty), so the optional rows are **modeled** from
+the single measured datapoint + GDELT column sizes; `GCAM`/GEG are lower-confidence
+(`GCAM` is the largest GKG column → roughly 2–3× the per-month bytes). Get exact
+numbers for free: `backfill_gdelt.py --estimate` for any date range, plus a one-off
+`dry_run=True` query that adds the candidate columns to measure the multiplier
+(dry runs are never billed). The free tier resets per calendar month, so spreading a
+large re-pull across ≥2 billing cycles keeps each month < 1 TB → ≈ $0. Keep the
+`--max-gb` chunk cap (a `GCAM` month ≈ 25–35 GB, well under the 100 GB default). The
+Storage Read API used for result download is negligible next to the query scan.
+
+## 7. Maintain the 4-metal text axis vs. collapse — the decision (verified)
+
+Should we keep a genuine per-metal text axis instead of collapsing? Examined in depth
+(live DOC-API measurement + method design + an adversarial 3-lens panel that did not
+refute the conclusion). **Answer: collapse for all four metals; a per-metal text axis
+is viable only for gold and silver, and only as a CV-gated experiment.**
+
+### The volume cliff (decisive)
+
+A per-metal *daily* text feature needs daily article volume. Measured two independent
+ways — the live corpus (cleaned URL keyword) and the live GDELT DOC 2.0 API (titles):
+
+| Metal | Cleaned URL/day | DOC-API raw/day | Daily signal? |
+|---|---|---|---|
+| gold | 133 (median 134) | ~6,300 | ✅ viable |
+| silver | 32 (median 27) | ~3,000 | ✅ viable |
+| platinum | 1.1 (**median 0**) | ~268 (single digits *real*) | ⚠️ weekly at best |
+| palladium | 0.6 (**median 0**) | ~43 (≈0 *real*) | ❌ not viable |
+
+The DOC API does **not** rescue Pt/Pd: contamination is *semantic*, so real titles
+carry the same false positives — "platinum" → Amex/Chase cards, LEED certs, RIAA "goes
+platinum", Xeon Platinum CPUs; "palladium" → the London Palladium theatre, Mr Bean,
+catalytic-converter-*theft*. `"palladium price"` ≈ 0/day. On ~96% of days Pt/Pd have
+no genuine metal articles.
+
+### Why collapse is the right null (not just the cheap one)
+
+- **Lossless today** — the four series are byte-identical (`gold-only = 0`).
+- **Removes a degeneracy** — on Pt/Pd's ~96% no-article days `context.py` leaves
+  `embedding_dispersion` / `text_pca_*` NaN; imputing them creates a degenerate point
+  mass that manufactures a spurious "no-news" HDBSCAN cluster and makes the rare
+  1-article days random outliers. A daily Pt/Pd text axis **degrades** clustering.
+- **Causally safe** — no per-metal text term ⇒ Phase 5 DoubleML cannot fit a spurious
+  per-metal "news effect" on low-support, name-contaminated regressors.
+- **Metals already differentiated** — `context.py` carries per-metal `ret_5d/20d`,
+  `rvol_20d`, and `cot_managed_money_z`. The collapse touches only the *text* axis.
+
+### Options vs. collapse
+
+| Option | Real for | Pt/Pd daily | Effort | Cost | Verdict |
+|---|---|---|---|---|---|
+| **Collapse (baseline)** | shared | n/a | low | $0 | **Ship now.** |
+| **(d)** URL/title disambiguation lexicon (existing corpus) | gold, silver | no | low | $0 | Best-ROI maintain path; full history. |
+| **(a)** DOC-API titles + FinBERT | gold, silver | partial | high | $0 | Recall lift over (d); optional. |
+| **(e)** WPIC/WGC/Silver Institute quarterly fundamentals | all 4 | no (quarterly) | med | $0 | Honest Pt/Pd per-metal channel (not text). |
+| **(f)** Hybrid (gold/silver text; Pt/Pd shared + fundamentals) | 2+2 | no | med | $0 | Recommended **end-state**, built incrementally. |
+| (b) mining.com RSS | per-feed | no | low | $0 | Forward-only → no backfill; live overlay only. |
+| (c) in-GKG `Amounts`/`Quotations` | weak | no | med | ~$3–9 BQ | Skip. |
+| (g) relevance-weighting | illusory | no | low | $0 | Avoid (fabricates collinear pseudo-variance). |
+
+### Recommendation & sequencing
+
+1. **Ship collapse now, all four metals** (`text_daily.aggregate_daily` → one shared
+   `market` row/day; `context.py` reads it for every metal). Pin the lossless invariant
+   with a regression test.
+2. **Per-metal text is a gold/silver-only experiment** — build option **(d)** first
+   ($0, automatable, full history) before any manual fundamentals work.
+3. **Pt/Pd per-metal = quarterly fundamentals (e)** — MVP one body (WGC gold) first.
+4. **End-state = hybrid (f)**, with the comparability fix: *not* a provenance flag —
+   cluster per-metal, or exclude the per-metal-text columns from the Pt/Pd distance
+   metric (a flag does not fix a distance-based clusterer).
+
+### The bar to ever build per-metal text
+
+Per metal, never pooled, on walk-forward CV vs collapse: DBCV/silhouette lift ≥ ~0.02
+with no inflated cluster share; higher between-cluster forward-return dispersion;
+**incremental IC ≥ ~0.02 after partialling out price + COT** (residual IC, since
+silver's news corr with gold is 0.65) with stable sign across ≥70% of folds; and a
+DoubleML CI excluding zero with stable sign. Gold/silver may pass; Pt/Pd are expected
+to fail every bar.
+
 ## Decisions needed before the full Phase 3 run (~9 h GPU)
 
 Doing these *first* avoids redoing the 9-hour aggregate:
 
-1. **Coverage** — backfill GDELT 2015–2019, or commit to 2020+ scope? *(Recommend backfill.)*
-2. **Text axis** — collapse text features to one shared news-state (§1 option a),
-   or invest in a real per-metal text source (§1 option b)? *(Recommend a now, b later.)*
+1. **Coverage** — backfill GDELT 2015–2019, or commit to 2020+ scope? *(Recommend
+   backfill.)* Note: the DOC-API per-metal re-source (§5) only reaches 2017, so the
+   GKG 2015–2019 BigQuery backfill remains the only route to 2015–16.
+2. **Text axis** — collapse the metal axis now for all four metals (§7; lossless).
+   Per-metal text is a **gold/silver-only, CV-gated** experiment via option (d) (§5);
+   platinum/palladium stay on shared text plus a quarterly fundamentals overlay (§7).
+   *(Recommend: collapse now; defer per-metal until it beats collapse on walk-forward CV.)*
 3. **Disk** — run `scripts/compact_headlines.py --replace` to reclaim space.
 4. Then: `aggregate` → `context` → `cluster` → `analyze`.
    (`daily_topic_prevalence` is already populated via themes-via-SQL.)

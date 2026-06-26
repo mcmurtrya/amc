@@ -64,8 +64,8 @@ def test_dispersion_closed_form_matches_centroid_norm():
     for L2-normalized embeddings; verify aggregate_daily honors it."""
     df, emb = _toy_frame()
     out = aggregate_daily(df, embeddings=emb)
-    # gold on 2022-01-05 has 2 articles (ECON_GOLDPRICE + ECON_CENTRALBANK)
-    row = out[(out["metal"] == "gold")
+    # market on 2022-01-05 has 2 articles (ECON_GOLDPRICE + ECON_CENTRALBANK)
+    row = out[(out["metal"] == "market")
               & (out["timestamp_utc"] == pd.Timestamp("2022-01-05"))].iloc[0]
     e = emb[[0, 1]]
     expected = 1.0 - np.linalg.norm(e.mean(axis=0))

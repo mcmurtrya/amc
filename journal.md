@@ -667,3 +667,111 @@ here, then fix the Phase 3 pipeline.
 - DB mutations this session: applied 005_phase3_artifacts; harness runs 34-35;
   `daily_topic_prevalence` fully populated (themes); `daily_text_features` holds
   1 day (2026-05-01) from a smoke (idempotent — a full aggregate overwrites it).
+
+---
+
+## 2026-06-26 (Phase 3 — text-quality audit → GKG headline discovery)
+
+### Context
+Audited how good the URL-slug recovery (`text_prep.url_to_text`) actually is as a
+proxy for article headlines, since the whole text channel rides on it. The audit
+cascaded into a much bigger finding: **GDELT has had the real article titles all
+along, in a GKG column we never ingest.** No code shipped to `src/` yet — this is
+a decision/handoff entry. The plan below is ready to implement.
+
+### What I did
+- **Audited slug recovery, whole-corpus.** Wrote `scripts/phase3_slug_quality.py`
+  (read-only, repeatable `--seed`, `--n`). Uniform 8k-row sample of all 63.3M
+  rows: only **61% recover to headline-like text (6+ tokens)**; **~30% are
+  degenerate (≤2 tokens** — section words `news`/`story`/`item`, or empty); only
+  **27% English-ish**. The earlier curated English-news spot-check (near-perfect)
+  was survivorship-biased. Systematic loss: `clean_slug_text` drops numeric
+  tokens, so prices/percentages/years/quarters are gone from every recovered slug.
+- **Found the theme filter is a no-op.** `text_daily.metals_for_themes` keeps
+  **100%** of rows — the corpus was *ingested* on these exact themes, and
+  `WB_1699_METAL_ORE_MINING` alone tags 57% of GKG, so the union is everything.
+  The daily aggregate genuinely averages over the full, noisy, ~70%-non-English mix.
+- **Tested whether degeneracy is missing-at-random — it is NOT.** Degenerate URLs
+  are overwhelmingly Asian/non-Latin finance portals with numeric-ID paths (`.cn`
+  13.5% of degenerate vs 0.0% of rich; sina/sohu/163/eastmoney; 67% numeric-id
+  paths). Degeneracy correlates with three model regressors: **time** (degen share
+  35.8%→26.1%, 2020→2026), **tone** (degen mean −0.106 vs rich −0.806, Cohen
+  d=+0.19), and **theme mix** (METAL_ORE +17pt, INFLATION −10pt). So a naive
+  min-token filter (drop degenerate rows) would bias tone/theme/count features in
+  a time-varying way — a selection-bias trap.
+- **Assessed "use Haiku to recover headlines" — rejected.** There is no headline
+  text in the DB (the `headline` column was a byte-copy of the URL, dropped in
+  migration 005). For the 67% numeric-ID degenerate URLs there are *no words in
+  the input*, so Haiku would hallucinate, not recover. Cost to run Haiku over 63M
+  URLs ≈ $6–13k for near-zero gain. LLMs belong at the cluster-label scale (already
+  built), not per-row.
+- **Probed two un-ingested GKG columns — the payoff.** Wrote
+  `scripts/phase3_gkg_enrichment_probe.py` (reuses `gdelt.build_query`'s exact
+  theme+date predicate; always free-dry-runs first). Pulled `Extras` and
+  `TranslationInfo` for a 3-day themed sample (67k rows, 1.4 GB scan, free):
+  - **`Extras` contains `<PAGE_TITLE>` on 99.6% of rows** — the real scraped
+    article title. **99.1% of the degenerate-slug rows are rescued** by it.
+  - Titles are HTML-entity-encoded; `html.unescape` decodes cleanly to native
+    Unicode (verified: Serbian/Latvian/Finnish/Persian).
+  - **`TranslationInfo` gives a free per-row source-language code** (empty =
+    English-original). Confirms corpus is **29.6% English**, ~70% native-language;
+    PAGE_TITLE is in the *original* language.
+
+### What I learned
+- **The real headlines were one un-pulled GKG column away the whole time.**
+  `gdelt.build_query` selects only 5 of ~27 GKG columns; `Extras` (the XML blob)
+  carries `<PAGE_TITLE>` near-universally. This **supersedes slug recovery** and
+  **dissolves** the degeneracy + missing-at-random + feature-gating problems: the
+  embedding becomes defined for ~100% of rows, so there's no non-random
+  "text-bearing" subset left to bias anything.
+- With real native-language titles in hand, a **multilingual encoder is now clearly
+  worth it** (genuine foreign headlines to embed, not garbage slugs) — and
+  `TranslationInfo` is the clean language label for routing/filtering.
+- Other un-ingested GKG fields worth a later look: `GCAM` (2,300 content dims vs
+  our 6 tone components), `Quotations` (real extracted sentences), `Amounts`
+  (recovers the numbers slug recovery drops).
+
+### Environment / housekeeping this session
+- **Fixed `.env`**: `GOOGLE_APPLICATION_CREDENTIALS` was a stale Windows path
+  (`~\.gcp\gdelt-reader.json`); rewrote to the Linux absolute path
+  `/home/mcmur/.gcp/gdelt-reader.json`. BigQuery dry-run + execute both work now.
+- **No DuckDB mutations** this session. The probe is read-only BQ; nothing written
+  to `headlines` or any table. New files: `scripts/phase3_slug_quality.py`,
+  `scripts/phase3_gkg_enrichment_probe.py` (both standalone, no `src/` changes).
+
+### Next session — implement the PAGE_TITLE plan (ready to go)
+1. **Add two columns to the GKG ingest** (`src/metals/data/gdelt.py`):
+   - `build_query`: also select `Extras`, `TranslationInfo`.
+   - `parse_gkg_rows`: derive `page_title = html.unescape(<PAGE_TITLE> regex from
+     Extras)` and `src_lang` (from `TranslationInfo`; empty → `eng`). The probe
+     script already has the exact regexes (`_PAGE_TITLE_RE`, `_SRCLC_RE`).
+   - New migration `006_*` adding `page_title VARCHAR`, `src_lang VARCHAR` to
+     `headlines`; extend the upsert column lists in `gdelt.upsert_headlines`.
+     (Also: rename the duplicate-prefix `005_phase3_artifacts` → `006` while here,
+     per the 2026-06-25 note — pick distinct numbers.)
+2. **Backfill** `Extras`+`TranslationInfo` over 2020-01→2026-06 to populate the new
+   columns. Cost ≈ 1.4 GB / 3 days → **~1.1 TB total scan ≈ $0 if chunked across
+   two billing months** (~$7 at full on-demand). Can reuse `backfill_gdelt.py`'s
+   chunking; needs a column-update path (rows already exist — update, don't insert).
+3. **Switch the embedding input** in `text_daily`/the pipeline from
+   `text_prep.url_to_text(url)` → `html.unescape(page_title)`, with slug recovery
+   kept only as the <0.4% fallback. The degeneracy/gating/MNAR work then becomes a
+   tiny safety net for the residual empties, not a bias mitigation.
+4. **Adopt the multilingual encoder** in `features/embeddings.py`:
+   `paraphrase-multilingual-MiniLM-L12-v2` (384-dim — drop-in, no BLOB/PCA/cache
+   schema change; ~2× slower encode). Re-warm/rebuild the embedding cache.
+5. Keep `phase3_slug_quality.py` + `url_to_text` as fallback/diagnostic. Re-run the
+   slug audit's `[D]` cross-tab against the new `page_title` column to confirm
+   coverage on the full corpus before deleting any slug path.
+
+### Watch-outs for the next agent
+- `Extras` is a fat XML column — the dry-run scan is wider than the 5-narrow-column
+  monthly pull. Always `--dry-run` (the probe does this by default) and check GB
+  before a full `--execute`. Stay under 1 TB/month to keep it free.
+- PAGE_TITLE is native-language + entity-encoded → `html.unescape` is mandatory
+  before embedding; don't embed raw `&#x...;` strings.
+- `TranslationInfo` is populated only for GDELT-translated (non-English-source)
+  docs, so empty ≠ missing — empty means English-original. Map empty → `eng`.
+- This is a schema change + full re-backfill (bigger commit). The probe proved the
+  premise (99.6% coverage); the user OK'd the direction but hadn't green-lit the
+  backfill itself — confirm scope before kicking off the multi-hour pull.

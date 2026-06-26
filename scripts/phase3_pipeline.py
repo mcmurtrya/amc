@@ -4,7 +4,7 @@ Stages, in order:
 
   1. ``gdelt``    — pull GDELT GKG rows for the date range, upsert to ``headlines``
   2. ``embed``    — embed every cached headline with sentence-transformers
-  3. ``aggregate``— daily aggregation to per-(date, metal) text features
+  3. ``aggregate``— daily aggregation to a shared 'market' news-state (text features)
   4. ``topics``   — fit BERTopic, persist, write per-day topic prevalences
   5. ``context``  — assemble the daily contextual feature vector
   6. ``cluster``  — fit UMAP + HDBSCAN, persist, write cluster assignments
@@ -125,8 +125,8 @@ def run_aggregate(start: str | None = None, end: str | None = None) -> None:
 
     Each month's headlines are embedded fresh on the GPU (bounded chunk,
     ``use_cache=False`` — a fresh encode beats reading the hash-sharded cache
-    for this bulk sequential access, and keeps disk flat) and reduced to
-    per-(date, metal) features. Because months align to day boundaries the
+    for this bulk sequential access, and keeps disk flat) and reduced to a
+    shared daily 'market' news-state. Because months align to day boundaries the
     per-chunk outputs are independent, so each month is upserted as it finishes
     (resumable, bounded memory). Replaces the old single ``fetchdf()`` of all
     63 M rows + the 97 GB embedding vstack.
@@ -167,7 +167,7 @@ def run_aggregate(start: str | None = None, end: str | None = None) -> None:
         total_rows += len(hl)
         total_written += n
         print(f"  {month_start:%Y-%m}: {len(hl):>9,} headlines  "
-              f"-> {n:>4} (date,metal) rows  [{total_written:,} total]")
+              f"-> {n:>4} daily 'market' rows  [{total_written:,} total]")
     print(f"daily_text_features rows written = {total_written:,}  "
           f"(from {total_rows:,} headlines)")
 

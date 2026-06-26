@@ -2,16 +2,18 @@
 
 Phase 3 step 3.7. Reads from the ``headlines`` table (populated by
 ``metals.data.gdelt``), embeds headlines via ``metals.features.embeddings``,
-and produces per-(date, metal) aggregated features:
+and produces a single shared daily ``market`` news-state row of features:
 
 - ``n_articles``         article count
 - ``mean_embedding``     L2-normalised mean of headline embeddings
 - ``embedding_dispersion`` mean cosine distance from the centroid
 - ``mean_tone_overall``  average V2Tone overall score (and pos/neg variants)
 
-The metal axis is derived from GDELT themes per headline. A headline tagged
-with `ECON_GOLDPRICE` counts toward gold; one tagged with `WB_1699_METAL_ORE_MINING`
-counts toward every metal (it's industry-wide, not metal-specific).
+The per-metal axis was collapsed: GDELT has no per-metal theme except
+``ECON_GOLDPRICE``, which never occurs alone, so all four metals received
+byte-identical features. We now emit one row/day labelled ``metal == "market"``
+(see results/phase3_gdelt_data_assessment.md §1/§7); per-metal differentiation in
+the clustering vector comes from price/COT channels in ``metals.features.context``.
 
 Day boundaries are calendar UTC days; aggregation is independent across days.
 """
@@ -32,6 +34,13 @@ from metals.data.db import connection
 # the aggregation captures its influence regardless of which metal is the
 # downstream prediction target.
 METALS = ("gold", "silver", "platinum", "palladium")
+
+# The per-metal text axis is redundant — every metal-bearing GDELT theme maps to
+# all four metals and the one gold-specific theme (ECON_GOLDPRICE) never appears
+# alone, so a per-(date, metal) aggregation is byte-identical across metals. Text
+# is therefore collapsed to a single shared daily news-state written under this
+# sentinel label. See results/phase3_gdelt_data_assessment.md §1/§7.
+MARKET = "market"
 
 THEME_TO_METALS: dict[str, tuple[str, ...]] = {
     # Metal-specific
@@ -123,15 +132,19 @@ def aggregate_daily(
     headlines: pd.DataFrame,
     embeddings: np.ndarray | None = None,
 ) -> pd.DataFrame:
-    """Aggregate to per-(date, metal). Returns columns:
+    """Aggregate headlines to a single daily ``market`` news-state row.
 
-    timestamp_utc, metal, n_articles, mean_tone_overall, mean_tone_positive,
-    mean_tone_negative, mean_embedding (np.ndarray | None),
-    embedding_dispersion (float | NaN).
+    Returns columns:
+        timestamp_utc, metal, n_articles, mean_tone_overall, mean_tone_positive,
+        mean_tone_negative, mean_embedding (np.ndarray | None),
+        embedding_dispersion (float | NaN).
 
-    Caller is responsible for aligning ``embeddings[i]`` with
-    ``headlines.iloc[i]``. Pass ``embeddings=None`` to skip embedding-based
-    aggregates (useful when you only need counts/tone).
+    The per-metal axis is collapsed (see module docstring and
+    results/phase3_gdelt_data_assessment.md §1/§7): every row is labelled
+    ``metal == "market"``. Only articles whose themes map to >= 1 metal (i.e.
+    carry >= 1 known theme) are counted, matching the prior behaviour. Caller
+    aligns ``embeddings[i]`` with ``headlines.iloc[i]``; pass ``embeddings=None``
+    to skip embedding-based aggregates.
     """
     cols = ["timestamp_utc", "metal", "n_articles",
             "mean_tone_overall", "mean_tone_positive", "mean_tone_negative",
@@ -139,25 +152,29 @@ def aggregate_daily(
     if headlines.empty:
         return pd.DataFrame(columns=cols)
 
+    hl = headlines.reset_index(drop=True)
     # Day-floor the timestamps so groupby keys are calendar days.
-    day = pd.to_datetime(headlines["timestamp_utc"]).dt.floor("D")
-    # Expand each headline into one row per applicable metal.
-    rows = []
-    for i, hl in headlines.reset_index(drop=True).iterrows():
-        themes = hl["themes_list"] if "themes_list" in hl else _parse_themes_field(hl.get("themes"))
-        metals = metals_for_themes(themes)
-        if not metals:
-            continue
-        for m in metals:
-            rows.append((day.iloc[i], m, i))
-    if not rows:
+    day = pd.to_datetime(hl["timestamp_utc"]).dt.floor("D")
+    # Keep only articles carrying >= 1 known theme (=> >= 1 metal), then group by
+    # calendar day into one shared 'market' news-state.
+    if "themes_list" in hl.columns:
+        themes_series = hl["themes_list"]
+    elif "themes" in hl.columns:
+        themes_series = hl["themes"].apply(_parse_themes_field)
+    else:
+        themes_series = pd.Series([[] for _ in range(len(hl))], index=hl.index)
+    keep_idx = np.flatnonzero(
+        themes_series.apply(lambda t: bool(metals_for_themes(t))).to_numpy()
+    )
+    if keep_idx.size == 0:
         return pd.DataFrame(columns=cols)
-    pairs = pd.DataFrame(rows, columns=["timestamp_utc", "metal", "_row_idx"])
+    pairs = pd.DataFrame({"timestamp_utc": day.to_numpy()[keep_idx],
+                          "_row_idx": keep_idx})
 
     out_rows = []
-    for (ts, metal), g in pairs.groupby(["timestamp_utc", "metal"], sort=True):
+    for ts, g in pairs.groupby("timestamp_utc", sort=True):
         idxs = g["_row_idx"].to_numpy()
-        sub = headlines.iloc[idxs]
+        sub = hl.iloc[idxs]
         n = len(sub)
         # Tone — drop NaN, mean the rest
         tone_overall = float(sub["tone_overall"].dropna().mean()) if "tone_overall" in sub else float("nan")
@@ -165,7 +182,7 @@ def aggregate_daily(
         tone_neg = float(sub["tone_negative"].dropna().mean()) if "tone_negative" in sub else float("nan")
         mean_emb = None
         dispersion = float("nan")
-        if embeddings is not None and len(embeddings) > max(idxs):
+        if embeddings is not None and len(embeddings) > int(idxs.max()):
             E = embeddings[idxs]
             centroid = E.mean(axis=0)
             norm = np.linalg.norm(centroid)
@@ -179,8 +196,8 @@ def aggregate_daily(
                 sims = E @ centroid
                 dispersion = float(1.0 - sims.mean())
         out_rows.append({
-            "timestamp_utc": ts,
-            "metal": metal,
+            "timestamp_utc": pd.Timestamp(ts),
+            "metal": MARKET,
             "n_articles": n,
             "mean_tone_overall": tone_overall,
             "mean_tone_positive": tone_pos,

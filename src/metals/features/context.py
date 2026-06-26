@@ -124,7 +124,14 @@ def build_context(
     artifacts: dict[str, object] = {}
     text_part = pd.DataFrame(index=prices.index)
     if text_daily is not None and not text_daily.empty:
-        sub = text_daily[text_daily["metal"] == cfg.target_metal].set_index("timestamp_utc")
+        # Text is a single shared daily 'market' news-state (the per-metal text
+        # axis is redundant — see results/phase3_gdelt_data_assessment.md §1/§7);
+        # use it for every target metal, exactly as topic prevalence is shared.
+        from metals.features.text_daily import MARKET
+        shared = text_daily[text_daily["metal"] == MARKET]
+        if shared.empty and text_daily["metal"].nunique() == 1:
+            shared = text_daily  # single-series frame under a non-'market' label
+        sub = shared.set_index("timestamp_utc")
         sub.index = pd.to_datetime(sub.index)
         sub = sub.reindex(prices.index)
         text_part["n_articles"] = sub["n_articles"].fillna(0).astype(float)

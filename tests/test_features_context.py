@@ -84,7 +84,7 @@ def test_build_context_with_text_features_adds_pca_columns():
     sub_idx = prices.index[50:50 + n_text]
     text = pd.DataFrame({
         "timestamp_utc": sub_idx,
-        "metal": ["gold"] * n_text,
+        "metal": ["market"] * n_text,
         "n_articles": rng.integers(5, 50, n_text),
         "embedding_dispersion": rng.uniform(0.1, 0.4, n_text),
         "mean_embedding": [rng.normal(0, 1, 32).astype(np.float32) for _ in range(n_text)],
