@@ -775,3 +775,74 @@ a decision/handoff entry. The plan below is ready to implement.
 - This is a schema change + full re-backfill (bigger commit). The probe proved the
   premise (99.6% coverage); the user OK'd the direction but hadn't green-lit the
   backfill itself — confirm scope before kicking off the multi-hour pull.
+
+---
+
+## 2026-06-26 (later — Phase 3 correctness foundation + ruff adoption)
+
+### Context
+New agent onboarding: read the whole journal + roadmap + GDELT assessment, then
+mapped every subsystem against the actual source (5-way parallel read) to ground
+the model and catch doc-vs-code drift. Agreed plan with the user: **correctness
+before compute** — land the in-flight collapse, fix the one real leak, ship a
+defensible clustering baseline on the signals we trust (themes + tone), and gate
+the expensive PAGE_TITLE/embedding work on a measured CV win. User decided:
+**extend coverage to 2015** and do the **migration-006 schema work first** so the
+2015–2019 backfill can be pulled *wide* (titles for free, no re-scan).
+
+### What I did
+- **Committed the in-flight work** in clean units: the per-metal text-axis
+  **collapse** to a shared `market` row (code + tests + assessment §7), and the
+  untracked **Docker/CUDA env + CLAUDE.md + the two audit scripts**.
+- **Fixed a real look-ahead leak in `context.build_context`.** The text-embedding
+  whitening PCA was `fit_transform`-ed on the *entire* date range, so `text_pca_*`
+  leaked future covariance into past coordinates — and (unlike Phase-1
+  `assemble`) the function ran no leakage guard. Added a `pca_fit_until` boundary
+  (`_pca_fit_transform`: fit on rows ≤ boundary, transform the full series),
+  threaded `--train-until` into `run_context`, and added an `assert_chronological`
+  guard. Regression test proves changing post-boundary embeddings cannot move
+  train-window `text_pca` coords; the full-sample fit is asserted to leak as a
+  control.
+- **Tidied the pipeline** in the same pass: run `analyze` before `label` (matched
+  `STAGES`; they were inverted in `main()`); bounded `run_label`'s headline pull
+  to the assignment date range with a per-day cap (was materializing the whole
+  ~63 M-row corpus); dropped the always-`None` `date_range` print; deduped the
+  `model_version` fallback. Corrected `leakage.py`'s docstring (it advertised a
+  nonexistent `check_no_lookahead`).
+- **Adopted ruff as the project standard** (user call). The repo was neither
+  `ruff format`-clean nor `ruff check`-clean tree-wide (93 check errors at HEAD).
+  Three isolated commits: `ruff format` repo-wide (mechanical), then a check-clean
+  pass (safe autofixes; `strict=False` on 8 bare `zip`s; `raise … from None`;
+  wrapped 4 long lines; **ignore N803/N806** since capitalised math-notation vars
+  `X`/`E`/`Z`/`X_std`/… are idiomatic here), and a `.git-blame-ignore-revs` for the
+  two bulk commits. CLAUDE.md now states both are enforced.
+- **229 tests pass** (+1 leak regression); `ruff check` + `ruff format --check`
+  both clean.
+
+### What I learned
+- The leak was structural, not a typo: the PCA fit lived upstream of the
+  clustering train/test split, so the split couldn't protect it. Fixing it needed
+  the train boundary pushed *into* `build_context`, not just into `run_cluster`.
+- `context.build_context` carries **no tone** today — only `n_articles`,
+  `embedding_dispersion`, and `text_pca_*`. The signals the assessment trusts most
+  (V2Tone, 100% coverage) aren't in the clustering vector yet. The Option-C
+  baseline should *add* tone while dropping the weak URL embeddings, not just
+  remove things.
+- `ruff format` is safe to bulk-adopt (it reduced check errors 93→75, introduced
+  none); the only judgment call was N803/N806, correctly resolved by ignoring them
+  for math code rather than renaming.
+
+### Open / next session
+1. **Migration 006/007 + wide GKG ingest** (the data no-regret, do before the pull):
+   add `page_title` + `src_lang` columns; `gdelt.build_query` to also select
+   `Extras`/`TranslationInfo`; `parse_gkg_rows` to derive them (regexes already in
+   `phase3_gkg_enrichment_probe.py`); extend `upsert_headlines`; rename
+   `005_phase3_artifacts` → `006` to kill the duplicate prefix; new `007` for the
+   columns. Tests for the parse. Then backfill **2015–2019 wide** (titles free for
+   that range); a later UPDATE-backfill adds titles to existing 2020–2026 rows.
+2. **Option C clustering**: add a `ContextConfig.include_embeddings` flag, *add
+   tone* to the context vector, drop `text_pca`/dispersion when off. Run
+   `aggregate` (embeddings-free, fast) → `context` → `cluster` → `analyze` and
+   sanity-check the 2020/2022/2023 regimes. Cheap, leak-free, defensible.
+3. **Then** gate the multilingual PAGE_TITLE re-embed on the §7 CV bar.
+- DB untouched this session (code + tests + git only; no pulls, no GPU).
