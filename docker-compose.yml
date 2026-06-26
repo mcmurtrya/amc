@@ -1,0 +1,57 @@
+# GPU-enabled environment for the `metals` research repo.
+#
+# Quick start (run inside WSL, from the repo root):
+#   docker compose build
+#   docker compose run --rm metals nvidia-smi                  # verify GPU passthrough
+#   docker compose run --rm metals \
+#       uv run python -c "import torch; print(torch.cuda.is_available())"
+#   docker compose run --rm metals uv run pytest               # expect 212 passed, 2 skipped
+#   docker compose run --rm metals \
+#       uv run python scripts/phase3_pipeline.py --only embed  # the next step (GPU, ~37 GB)
+#   docker compose up -d && docker compose exec metals bash    # long-lived shell
+#
+# Requires: Docker Engine + NVIDIA Container Toolkit (Docker Desktop's WSL2
+# backend bundles this), and Compose v2.24+ (for the env_file long form).
+
+services:
+  metals:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: metals-research:latest
+    working_dir: /workspace
+    env_file:
+      - path: .env          # FRED_API_KEY, ANTHROPIC_API_KEY, etc. (created via `cp .env.example .env`)
+        required: false
+    environment:
+      # In-container cache paths -> the named volumes below (override any host
+      # paths that .env might carry).
+      METALS_EMBEDDING_CACHE_DIR: /cache/metals/embeddings
+      HF_HOME: /cache/huggingface
+      # METALS_DB_PATH is left at its default of
+      # /workspace/data/processed/metals.duckdb, which lives on the host via the
+      # bind mount below — so the DuckDB file is never baked into the image.
+    volumes:
+      - .:/workspace                  # live source + DuckDB on host ext4
+      - metals-cache:/cache/metals    # ~37 GB embeddings cache (isolated, never synced)
+      - hf-cache:/cache/huggingface   # downloaded sentence-transformers / HF models
+      # --- Phase 3 `gdelt` stage only (backfill already done) -----------------
+      # Mount a GCP service-account JSON read-only, then uncomment the env line.
+      # Set GCP_CREDS_FILE in your shell or .env to the host path of the JSON.
+      # - ${GCP_CREDS_FILE:?set GCP_CREDS_FILE to your service-account json}:/secrets/gcp.json:ro
+    # environment (uncomment together with the mount above):
+    #   GOOGLE_APPLICATION_CREDENTIALS: /secrets/gcp.json
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    stdin_open: true
+    tty: true
+    command: bash
+
+volumes:
+  metals-cache:
+  hf-cache:
