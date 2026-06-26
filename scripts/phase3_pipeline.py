@@ -3,12 +3,13 @@
 Stages, in order:
 
   1. ``gdelt``    — pull GDELT GKG rows for the date range, upsert to ``headlines``
-  2. ``embed``    — embed every cached headline with sentence-transformers
+  2. ``embed``    — (optional) warm the sentence-transformers embedding cache
   3. ``aggregate``— daily aggregation to a shared 'market' news-state (text features)
-  4. ``topics``   — fit BERTopic, persist, write per-day topic prevalences
+  4. ``topics``   — per-day topic prevalences (themes-via-SQL default; BERTopic opt-in)
   5. ``context``  — assemble the daily contextual feature vector
   6. ``cluster``  — fit UMAP + HDBSCAN, persist, write cluster assignments
   7. ``analyze``  — produce cluster summary tables to ``results/phase3_*.csv``
+  8. ``label``    — LLM-label clusters (Anthropic; skipped without ANTHROPIC_API_KEY)
 
 Each stage is independently runnable via ``--only`` or skippable from a
 chosen start point via ``--resume-from``. Heavy artifacts (the BERTopic
@@ -41,8 +42,7 @@ def run_gdelt(start: str, end: str) -> None:
     _print_stage("gdelt")
     from metals.data.gdelt import refresh
     summary = refresh(start_date=start, end_date=end)
-    print(f"rows_written = {summary['rows_written']}")
-    print(f"date_range   = {summary.get('date_range')}")
+    print(f"rows_written = {summary['rows_written']}  (window {start} → {end})")
 
 
 def _month_bounds(conn, start: str | None = None, end: str | None = None):
@@ -247,7 +247,7 @@ def run_topics(method: str = "themes", start: str | None = None,
     print(f"daily_topic_prevalence rows written = {n:,}  (BERTopic sample, partial day coverage)")
 
 
-def run_context(target_metal: str) -> pd.DataFrame:
+def run_context(target_metal: str, train_until: str | None = None) -> pd.DataFrame:
     _print_stage("context")
     from metals.features.context import ContextConfig, build_context
     from metals.features.loaders import load_macro, load_prices
@@ -261,9 +261,18 @@ def run_context(target_metal: str) -> pd.DataFrame:
 
     if prices.empty or macro.empty:
         raise RuntimeError("prices or macro empty — run Phase 1 ingestion first.")
+    has_embeddings = (
+        text is not None and not text.empty
+        and "mean_embedding" in text.columns
+        and text["mean_embedding"].notna().any()
+    )
+    if train_until is None and has_embeddings:
+        print("  WARNING: --train-until not set; the text-embedding PCA will be fit "
+              "on the full sample (look-ahead). Pass --train-until for an honest "
+              "walk-forward run.")
     ctx, artifacts = build_context(
         prices=prices, macro_wide=macro, text_daily=text,
-        topic_prevalence=topics,
+        topic_prevalence=topics, pca_fit_until=train_until,
         config=ContextConfig(target_metal=target_metal),
     )
     print(f"context shape = {ctx.shape}  cols includes "
@@ -340,6 +349,20 @@ def _today_iso() -> str:
     return date.today().isoformat()
 
 
+def _latest_model_version() -> str | None:
+    """Most recent clustering ``model_version`` persisted to cluster_assignments."""
+    from metals.data.db import connection
+    with connection(read_only=True) as conn:
+        row = conn.execute(
+            "SELECT model_version FROM cluster_assignments "
+            "ORDER BY timestamp_utc DESC LIMIT 1"
+        ).fetchone()
+    return row[0] if row else None
+
+
+
+_LABEL_HEADLINES_PER_DAY = 50
+
 
 def run_label(model_version: str, target_metal: str = "gold",
               llm_model: str = "claude-haiku-4-5-20251001") -> None:
@@ -364,19 +387,31 @@ def run_label(model_version: str, target_metal: str = "gold",
     from metals.features.loaders import load_prices
     from metals.features.topics import load_topic_prevalence_wide
 
-    with connection() as conn:
+    with connection(read_only=True) as conn:
         assignments = conn.execute(
             "SELECT timestamp_utc, cluster_id, confidence "
             "FROM cluster_assignments WHERE model_version = ? ORDER BY timestamp_utc",
             [model_version],
         ).fetchdf()
-        headlines = conn.execute(
-            "SELECT timestamp_utc, article_url AS headline, "
-            "article_url FROM headlines"
-        ).fetchdf()
     if assignments.empty:
         print(f"no assignments for {model_version!r}; nothing to label.")
         return
+
+    # Only a handful of example headlines per clustered day are ever shown to the
+    # LLM. Bound the pull to the assignment date range with a per-day cap instead
+    # of materializing the whole ~63 M-row corpus.
+    lo = str(pd.Timestamp(assignments["timestamp_utc"].min()))
+    hi = str(pd.Timestamp(assignments["timestamp_utc"].max()) + pd.Timedelta(days=1))
+    with connection(read_only=True) as conn:
+        headlines = conn.execute(
+            "SELECT timestamp_utc, article_url AS headline, article_url FROM ("
+            "  SELECT timestamp_utc, article_url, row_number() OVER ("
+            "    PARTITION BY date_trunc('day', timestamp_utc) ORDER BY timestamp_utc"
+            "  ) AS rn FROM headlines "
+            "  WHERE timestamp_utc >= ? AND timestamp_utc < ?"
+            f") WHERE rn <= {_LABEL_HEADLINES_PER_DAY}",
+            [lo, hi],
+        ).fetchdf()
 
     prices = load_prices(column="adj_close")
     fr = forward_returns(prices, horizons=(1, 5, 20))
@@ -456,43 +491,30 @@ def main() -> None:
 
     context = None
     if "context" in do:
-        context = run_context(args.target_metal)
+        context = run_context(args.target_metal, train_until=args.train_until)
 
     model_version = args.model_version
     if "cluster" in do:
         if context is None:
-            context = run_context(args.target_metal)
+            context = run_context(args.target_metal, train_until=args.train_until)
         model_version = run_cluster(context, args.train_until,
                                     model_version=model_version)
 
-    if "label" in do:
-        if model_version is None:
-            from metals.data.db import connection
-            with connection() as conn:
-                row = conn.execute(
-                    "SELECT model_version FROM cluster_assignments "
-                    "ORDER BY timestamp_utc DESC LIMIT 1"
-                ).fetchone()
-            model_version = row[0] if row else None
-        if model_version is None:
-            print("no model_version available for label stage; skipping.")
-        else:
-            run_label(model_version, target_metal=args.target_metal,
-                      llm_model=args.llm_model)
-
+    # analyze before label, matching STAGES order.
     if "analyze" in do:
-        if model_version is None:
-            from metals.data.db import connection
-            with connection() as conn:
-                row = conn.execute(
-                    "SELECT model_version FROM cluster_assignments "
-                    "ORDER BY timestamp_utc DESC LIMIT 1"
-                ).fetchone()
-            model_version = row[0] if row else None
-        if model_version is None:
+        mv = model_version or _latest_model_version()
+        if mv is None:
             print("no model_version available for analyze; skipping.")
         else:
-            run_analyze(model_version, target_metal=args.target_metal)
+            run_analyze(mv, target_metal=args.target_metal)
+
+    if "label" in do:
+        mv = model_version or _latest_model_version()
+        if mv is None:
+            print("no model_version available for label stage; skipping.")
+        else:
+            run_label(mv, target_metal=args.target_metal,
+                      llm_model=args.llm_model)
 
     print("\ndone.")
 

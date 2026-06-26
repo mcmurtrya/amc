@@ -2,19 +2,20 @@
 
 A feature matrix passes the leakage check iff no row of features X with
 timestamp t contains data observed at timestamp >= t. Because we use
-rolling/lag-based features and align by timestamp, this can be checked
-structurally: every feature column should be either (a) computable from
-data with timestamp <= t, or (b) explicitly lagged.
+rolling/lag-based features and align by timestamp, this is checked
+structurally rather than by re-deriving every feature from truncated source
+data.
 
-The simplest reliable check: assert that for every (timestamp, feature)
-pair, the feature value at timestamp t equals what it would be if we
-truncated all source data at t. This is expensive in general, so we
-provide an instead-of-end-to-end pragmatic check:
+Three pragmatic guards are provided, all raising :class:`LeakageError`:
 
-  ``check_no_lookahead(features, target, target_horizon)`` asserts that
-  the target column was shifted by `target_horizon` positive periods
-  (i.e. target_t = source_{t + horizon}), and that no feature column
-  was shifted by a negative period.
+  - ``assert_chronological(df)`` — the index is strictly increasing and unique.
+  - ``assert_target_strictly_future(features, target, target_horizon,
+    min_nan_tail=None)`` — the target is built from strictly-future observations,
+    evidenced by a trailing run of NaNs of length ``min_nan_tail`` (which the
+    caller must set to ``h + w - 1`` for a window-valued target such as realised
+    vol, else the guard cannot catch a window that overlaps the present).
+  - ``assert_features_have_history(features, min_warmup)`` — the leading
+    ``min_warmup`` rows are not fully populated (rolling warmup is incomplete).
 """
 
 from __future__ import annotations
