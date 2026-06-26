@@ -1,0 +1,8 @@
+# Revisions to ignore in `git blame` (bulk mechanical reformats / lint fixes).
+# Enable locally with:  git config blame.ignoreRevsFile .git-blame-ignore-revs
+# GitHub applies this file automatically.
+
+# Adopt ruff format across the codebase
+461f3bd16a7df4215e548666321c7a4e70fb676d
+# Make ruff check clean tree-wide (autofixes, strict zips, N803/N806 ignore)
+70488682a8cf8fbcde71f40efa2421a6e9448355
