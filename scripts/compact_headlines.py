@@ -99,7 +99,7 @@ def _src_columns(con: duckdb.DuckDBPyConnection, table: str) -> set[str]:
     return {r[0] for r in rows}
 
 
-def compact(source: Path, out: Path, *, force: bool) -> dict:
+def compact(source: Path, out: Path, *, force: bool, allow_column_drop: bool = False) -> dict:
     if source.resolve() == out.resolve():
         raise SystemExit("Source and output paths must differ.")
     if not source.exists():
@@ -130,7 +130,24 @@ def compact(source: Path, out: Path, *, force: bool) -> dict:
             con.execute(f'CREATE TABLE "{t}" AS SELECT * FROM src."{t}"')
             target_tables.add(t)
         else:
-            cols = [c for c in _columns(con, t) if c in _src_columns(con, t)]
+            src_cols = _src_columns(con, t)
+            target_cols = _columns(con, t)
+            dropped = sorted(src_cols - set(target_cols))
+            if dropped and not allow_column_drop:
+                # Row counts still match after a column drop, so without this
+                # guard the verification below would pass while the swap
+                # silently discarded the columns' data. The usual cause is a
+                # migration file missing from this checkout (the canonical
+                # schema is rebuilt from the migration glob), not a real drop.
+                raise SystemExit(
+                    f"Source table {t!r} has column(s) {dropped} missing from the "
+                    "rebuilt canonical schema; compacting would silently discard "
+                    "their data. Check that all migration files are present, or "
+                    "re-run with --allow-column-drop if the drop is intentional."
+                )
+            if dropped:
+                print(f"  ! {t}: dropping column(s) {dropped} (--allow-column-drop)")
+            cols = [c for c in target_cols if c in src_cols]
             collist = ", ".join(f'"{c}"' for c in cols)
             con.execute(f'INSERT INTO "{t}" ({collist}) SELECT {collist} FROM src."{t}"')
         n_out = con.execute(f'SELECT COUNT(*) FROM "{t}"').fetchone()[0]
@@ -167,6 +184,12 @@ def main() -> None:
         help="With --replace, do not keep a .bak of the original.",
     )
     ap.add_argument("--force", action="store_true", help="Overwrite an existing output file.")
+    ap.add_argument(
+        "--allow-column-drop",
+        action="store_true",
+        help="Proceed even when source columns are absent from the rebuilt "
+        "canonical schema (their data is discarded). Default: refuse.",
+    )
     args = ap.parse_args()
 
     source = args.db
@@ -177,7 +200,7 @@ def main() -> None:
     print(f"  -> {out}")
     print(f"  source size: {_human(size_before)}\n")
 
-    compact(source, out, force=args.force)
+    compact(source, out, force=args.force, allow_column_drop=args.allow_column_drop)
 
     size_after = out.stat().st_size
     saved = size_before - size_after

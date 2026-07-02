@@ -72,14 +72,21 @@ a CUDA 12.4 image); CPU runs are slow.
 - **DuckDB does not reclaim space on `DROP COLUMN`.** After dropping columns, run
   `uv run python scripts/compact_headlines.py --replace` to actually shrink the file
   (keeps a `.bak`). Disk is tight on the research box.
-- **Two conflicting `005_*.sql` migrations** exist (`005_drop_redundant_headline.sql`,
-  `005_phase3_artifacts.sql`). Confirm runner ordering before adding migration 006+;
-  the plan is to rename the artifacts one to `006`.
+- **Migration IDs are tracked by filename stem.** The old duplicate-005 conflict was
+  resolved by renaming the artifacts migration to `006_phase3_artifacts.sql`
+  (2026-07-02); DBs that ran it under the old stem keep a stale
+  `005_phase3_artifacts` row and re-run the renamed file as a no-op (it is fully
+  `IF NOT EXISTS`). Next free number: `008`. Never put a `;` inside a migration
+  comment — whole-file execution silently truncates at it.
 - **GDELT corpus limits** are documented in
   `results/phase3_gdelt_data_assessment.md` — read it before doing anything with text
-  features. Key facts: embedded "documents" are article **URLs, not titles**; there is
-  **no per-metal news signal** (all four metals get byte-identical daily text
-  features — the metal axis on text is being collapsed); coverage is **2020+ only**.
+  features. Key facts: there is **no per-metal news signal** (text features are a
+  single shared `market` row per day); DB coverage is **2020+ only** until the
+  2015–2019 backfill runs. Historic rows embed article **URL slugs, not titles** —
+  migration `007` added `page_title`/`src_lang` (from the GKG `Extras` /
+  `TranslationInfo` columns, ~99.5% real-title coverage, ~27% English) and the wide
+  ingest populates them for new pulls, but rows ingested pre-007 stay NULL until
+  re-pulled. NULL `src_lang` means "not pulled wide", **not** English (`'eng'`).
 - **Secrets** live in `.env` (copy from `.env.example`); needs at least `FRED_API_KEY`.
   BigQuery (GDELT) needs `GOOGLE_APPLICATION_CREDENTIALS`.
 - **Windows/OneDrive:** keep the venv outside OneDrive (`UV_PROJECT_ENVIRONMENT`) to

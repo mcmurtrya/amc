@@ -1,9 +1,10 @@
-"""Probe two GKG columns we don't currently ingest: Extras and TranslationInfo.
+"""Probe the GKG Extras and TranslationInfo columns.
 
-Phase 3 stores only DATE, SourceCommonName, DocumentIdentifier, V2Themes, V2Tone
-(see ``metals.data.gdelt.build_query``). GKG carries ~22 more columns. Two of
-them bear directly on the slug-recovery / language problems surfaced in the
-text-quality audit:
+Historical note: this probe is what discovered that ``Extras`` carries the real
+article title. As of migration 007 both columns ARE part of the regular wide
+ingest (``metals.data.gdelt``), and this script imports its extractors from
+there — it remains useful as a cheap standalone coverage check for a date
+window before committing to a pull. Original rationale:
 
   - ``Extras`` (V2EXTRASXML): an XML blob that *sometimes* contains
     ``<PAGE_TITLE>…</PAGE_TITLE>`` — the actual scraped article title. If
@@ -34,19 +35,14 @@ from __future__ import annotations
 
 import argparse
 import os
-import re
 from collections import Counter
 
 from dotenv import load_dotenv
 
-from metals.data.gdelt import build_query, load_themes
+from metals.data.gdelt import build_query, extract_page_title, extract_src_lang, load_themes
 from metals.data.text_prep import url_to_text
 
 load_dotenv()
-
-_PAGE_TITLE_RE = re.compile(r"<PAGE_TITLE>(.*?)</PAGE_TITLE>", re.IGNORECASE | re.DOTALL)
-# TranslationInfo looks like "srclc:fra;eng:Moses 2.1.1" — pull the source lang.
-_SRCLC_RE = re.compile(r"srclc:([a-z]{2,3})", re.IGNORECASE)
 
 ONDEMAND_USD_PER_TB = 6.25  # US on-demand, per results/phase3_backfill_plan.md
 FREE_TB_PER_MONTH = 1.0
@@ -68,18 +64,13 @@ def build_probe_query(start: str, end: str) -> str:
 
 
 def page_title(extras: object) -> str:
-    if not isinstance(extras, str) or not extras:
-        return ""
-    m = _PAGE_TITLE_RE.search(extras)
-    return m.group(1).strip() if m else ""
+    """Display wrapper over the shared ingest extractor ('' when absent)."""
+    return extract_page_title(extras) or ""
 
 
 def src_lang(info: object) -> str:
-    """Source language code; 'eng' when TranslationInfo is empty (English-original)."""
-    if not isinstance(info, str) or not info.strip():
-        return "eng"
-    m = _SRCLC_RE.search(info)
-    return m.group(1).lower() if m else "?"
+    """Display wrapper over the shared ingest extractor ('?' when malformed)."""
+    return extract_src_lang(info) or "?"
 
 
 def _bq_client():
