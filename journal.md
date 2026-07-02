@@ -944,3 +944,78 @@ four Phase 3 tables until today, while the server has them populated.
 3. **Option C clustering baseline** (unchanged): `include_embeddings` flag,
    add tone to the context vector, aggregate→context→cluster→analyze, regime
    sanity checks.
+
+---
+
+## 2026-07-02 (later — crash recovery: 2015–2019 backfill landed)
+
+### Context
+The machine overheated and restarted mid-way through the 2015–2019 wide
+backfill (it launched right after the 11:52 commit and died ~13:08). Session
+goal: diagnose, resume safely, land the whole thing. AYMStation again — all
+backfill data lives in the **laptop** DB; the server still has none of it.
+
+### What I did
+- **Forensics**: BigQuery job history showed all 55 chunk queries `DONE` — the
+  machine died *between* chunks and DuckDB closed clean (no WAL). Landed data
+  stopped at 2016-11-21, mid-November: exactly the case where the
+  month-granularity gap detection in `backfill_gdelt.py` would have resumed at
+  December and silently left Nov 22–30 empty forever.
+- **Fixed gap detection to day granularity** (`present_days` / day-level
+  `gap_ranges`). Exact by construction: chunk upserts are atomic and
+  day-aligned, so a day with rows is a complete day. Regression test encodes
+  the crash (present through 11-21 → gap must start at 11-22).
+- **Resumed the pull** (~0.86 TB remaining). The resumed process was
+  **OOM-killed** at ~15.3 GB RSS after ~70 chunks (`dmesg` oom-kill; the WSL2
+  VM has 15 GB): memory accumulates across chunks in the BQ→pandas path and
+  never returns to the OS. DuckDB rolled back cleanly — zero damage. NB: OOM
+  is a plausible contributor to the original "overheat" crash too.
+- **Restarted as a month-windowed driver** — one fresh process per calendar
+  month, 16 windows, each idempotent thanks to day-level gaps. All 16
+  completed without incident (~1 chunk/min, ~3–5 GB RSS steady).
+- **Verified**: coverage **2015-02-18 → 2026-06-19, day-continuous**, 139.9M
+  rows (was 63.3M). Exactly one hole: **2017-08-29 is empty upstream in GDELT
+  itself** (a re-pull returns 0 rows; neighbouring days depressed too — left
+  as documented). `src_lang` 100% on backfilled rows, 32.4% English.
+- **PAGE_TITLE has a hard onset: 2019-09-22.** Coarse-probed via
+  `COUNTIF(Extras LIKE '%<PAGE_TITLE>%')` over a 2017–2019 day grid, then
+  confirmed in landed rows: 0% through 09-21, 37% on the switch-on day
+  (14:30 UTC), ~99.2% steady after. So "titles for free" held only for the
+  last ~3.3 months of the backfill (~3.1M titled rows); **2015→2019-09-21 can
+  never get titles from GKG** — the DOC 2.0 API remains the only title source
+  there. Corrected the assessment (§2 → resolved, §3 correction block), the
+  `gdelt.py` docstring (~99.6% claim), and the CLAUDE.md sharp edge.
+- **Title UPDATE-backfill 2020–2026 needs no new code**: dry-runs put plain
+  wide `refresh()` at 1.233 TB vs a minimal 4-column variant at 1.154 TB —
+  $0.49 apart, because V2Themes is scanned by the WHERE clause either way.
+
+### What I learned
+- Day-granular gap detection paid for itself twice in one session: the crash
+  resume (9 days would have vanished silently) and surfacing the 2017-08-29
+  upstream hole that month granularity structurally cannot see.
+- Long BigQuery→pandas→DuckDB pulls on this box must run one process per
+  window: RSS grows ~200 MB/chunk regardless of chunk size, so the OOM
+  killer — not thermals — is the binding constraint. The driver-loop pattern
+  (fresh process per month, script skips present days) is now the standard.
+- Never open the DuckDB file (even read-only) while a backfill is writing:
+  single-writer locking means a stray reader can kill the writer's next
+  connect. Verify only between runs.
+
+### DB mutations this session
+- **Laptop DB only**: `headlines` 63.3M → 139.9M rows (this session pulled
+  2016-11-22 → 2019-12-31 wide; the pre-crash run had landed 2015-02-18 →
+  2016-11-21). File 35 → 51.4 GB (disk fine: 769 GB free).
+- **Server DB untouched** — still 2020+, narrow, pre-007. Migrations first,
+  then either re-run the backfill there (~1.35 TB again) or copy the file.
+- BigQuery July total: **1.373 TB billed → $2.33** past the free tier
+  (projection was $2.39).
+
+### Next session
+1. **Option C clustering baseline** (unchanged, now unblocked on 2015+ data):
+   `ContextConfig.include_embeddings` flag, add tone to the context vector,
+   aggregate→context→cluster→analyze; regime sanity checks can now include
+   the 2015–16 commodity bust and 2018 trade war.
+2. **Title UPDATE-backfill 2020–2026** via plain `refresh()` after Aug 1
+   ($0 across the billing boundary; ~1.23 TB).
+3. Decide the server-DB sync path (re-pull vs copy the 51 GB file) before any
+   server-side Phase 3 compute.
