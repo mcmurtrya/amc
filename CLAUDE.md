@@ -81,12 +81,19 @@ a CUDA 12.4 image); CPU runs are slow.
 - **GDELT corpus limits** are documented in
   `results/phase3_gdelt_data_assessment.md` — read it before doing anything with text
   features. Key facts: there is **no per-metal news signal** (text features are a
-  single shared `market` row per day); DB coverage is **2020+ only** until the
-  2015–2019 backfill runs. Historic rows embed article **URL slugs, not titles** —
-  migration `007` added `page_title`/`src_lang` (from the GKG `Extras` /
-  `TranslationInfo` columns, ~99.5% real-title coverage, ~27% English) and the wide
-  ingest populates them for new pulls, but rows ingested pre-007 stay NULL until
-  re-pulled. NULL `src_lang` means "not pulled wide", **not** English (`'eng'`).
+  single shared `market` row per day). Coverage on **this (laptop) DB** is
+  **2015-02-18 → 2026-06-19** (backfilled 2026-07-02; the server DB is still 2020+
+  and needs migrations before any ingest). One known upstream hole: **2017-08-29 is
+  empty in GDELT itself**. GKG `Extras` carries `PAGE_TITLE` **only from
+  2019-09-22** (~99.2% coverage after; 0% before — those rows can never get titles
+  from GKG, only URL slugs). `src_lang` covers all dates (~32% English 2015–2019).
+  Rows ingested pre-007 (all of 2020+) stay NULL `page_title`/`src_lang` until
+  re-pulled wide — plain `refresh()` over 2020–2026 does it, no new code needed
+  (~1.23 TB; run in a fresh billing month). NULL `src_lang` means "not pulled
+  wide", **not** English (`'eng'`). Backfill gap detection is **day-granular**
+  (`scripts/backfill_gdelt.py`); long pulls should run **one process per month
+  window** — a single long-lived process accumulates RAM and gets OOM-killed on
+  the 15 GB WSL2 VM.
 - **Secrets** live in `.env` (copy from `.env.example`); needs at least `FRED_API_KEY`.
   BigQuery (GDELT) needs `GOOGLE_APPLICATION_CREDENTIALS`.
 - **Windows/OneDrive:** keep the venv outside OneDrive (`UV_PROJECT_ENVIRONMENT`) to

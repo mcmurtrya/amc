@@ -10,11 +10,14 @@ GDELT GKG has no "headline" field per se — only the article URL, which we
 store once in ``article_url``. (Earlier revisions also kept a ``headline``
 column that was a byte-for-byte copy of ``article_url``; it was dropped in
 migration 005 to reclaim storage.) The real article title *does* live in the
-GKG ``Extras`` XML blob as ``<PAGE_TITLE>`` on ~99.6% of themed rows — we
-pull it into ``page_title`` (original language, entity-decoded), along with
-the machine-translation source language from ``TranslationInfo`` into
-``src_lang`` (empty upstream = English-original = ``'eng'``). Rows ingested
-before migration 007 carry NULLs in both until re-pulled wide.
+GKG ``Extras`` XML blob as ``<PAGE_TITLE>`` — but only from **2019-09-22**,
+when GDELT switched the field on (0% before, ~99.2% of themed rows after;
+measured 2026-07-02). We pull it into ``page_title`` (original language,
+entity-decoded), along with the machine-translation source language from
+``TranslationInfo`` into ``src_lang`` (empty upstream = English-original =
+``'eng'``; populated for all dates back to 2015). Rows ingested before
+migration 007 carry NULLs in both until re-pulled wide; rows before
+2019-09-22 stay NULL ``page_title`` forever.
 
 Run as:
     uv run python -m metals.data.gdelt --start 2024-01-01 --end 2024-01-31

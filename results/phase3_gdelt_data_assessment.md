@@ -66,24 +66,27 @@ WHERE list_contains(from_json(themes,'["VARCHAR"]'),'ECON_GOLDPRICE')
 
 ---
 
-## 2. 🔴 Coverage is 2020-01-01 → 2026-06-19 only (~6.5 years)
+## 2. ~~🔴 Coverage is 2020-01-01 → 2026-06-19 only~~ → ✅ RESOLVED 2026-07-02
 
-The roadmap's own regime sanity-checks are mostly **out of range**:
+**The 2015–2019 wide backfill ran 2026-07-02** (laptop DB): coverage is now
+**2015-02-18 → 2026-06-19 continuous** at day granularity, 139.9M rows, with
+exactly one hole — **2017-08-29 is empty upstream in GDELT itself** (BigQuery
+returns 0 rows for the whole day; the neighbouring days are visibly depressed
+too). 1.373 TB scanned in July ($2.33 past the free tier). The regime table:
 
 | Regime | In range? |
 |---|---|
 | 2011 gold peak | ❌ |
 | 2013 taper tantrum | ❌ |
-| 2015–16 commodity bust | ❌ |
-| 2018 trade war | ❌ |
+| 2015–16 commodity bust | ✅ (from 2015-02-18) |
+| 2018 trade war | ✅ |
 | 2020 COVID flight-to-safety | ✅ |
 | 2022 inflation shock | ✅ |
 | 2023 banking stress | ✅ |
 
-**Recommendation:** GKG 2.0 supports back to **2015-02-18** (the pipeline's
-default `--start` already assumes it). Backfill **2015–2019** if you want those
-regimes and a real pre/post-2015 robustness split (Phase 5). Otherwise scope
-every news-based claim explicitly to 2020+.
+The **server DB has none of this** — it diverged from the laptop DB (git syncs
+code, not data). Run the migrations there, then re-run the backfill (or copy
+the DuckDB file) before any Phase 3 compute on the server.
 
 Reproduce: `SELECT min(timestamp_utc)::DATE, max(timestamp_utc)::DATE, count(*) FROM headlines;`
 
@@ -91,10 +94,31 @@ Reproduce: `SELECT min(timestamp_utc)::DATE, max(timestamp_utc)::DATE, count(*) 
 
 ## 3. 🟠 The embedded "documents" are URLs, not headline text
 
-GKG carries no article title, so the pipeline embeds `article_url` (the surviving
-URL column after migration 005 dropped the redundant `document_identifier` copy).
-URL embeddings are a weak, domain/slug-driven signal — a day's
-`embedding_dispersion` reflects URL-string variety more than news disagreement.
+GKG carries no article title *field*, so the pipeline embeds `article_url` (the
+surviving URL column after migration 005 dropped the redundant
+`document_identifier` copy). URL embeddings are a weak, domain/slug-driven
+signal — a day's `embedding_dispersion` reflects URL-string variety more than
+news disagreement.
+
+**2026-07-02 correction — the Extras `PAGE_TITLE` has a hard start date.**
+Migration 007 pulls real titles from the GKG `Extras` XML into `page_title`,
+but the backfill proved GDELT only began publishing `PAGE_TITLE` on
+**2019-09-22** (a step function: 0% through 2019-09-21, 37% on the switch-on
+day, ~99.2% steady from 2019-09-23). Verified both in landed rows and by
+BigQuery `COUNTIF(Extras LIKE '%<PAGE_TITLE>%')` probes across 2017–2019.
+Consequences:
+
+- "Titles for free" held only for the last ~3.3 months of the 2015–2019
+  backfill (~3.1M of ~76.6M rows). **2015-02-18 → 2019-09-21 can never get
+  titles from GKG**; the DOC 2.0 API (below) is the only title source there.
+- `src_lang` has no such limit: 100% populated for all backfilled rows
+  (TranslationInfo exists from GKG 2.0's start). English share 2015–2019 is
+  32.4% (24.9M of 76.6M rows).
+- The planned title UPDATE-backfill **2020→2026 is unaffected** (all title-era).
+  Dry-runs 2026-07-02: plain wide `refresh()` = 1.233 TB vs a minimal 4-column
+  variant = 1.154 TB — only $0.49 apart (V2Themes is scanned by the WHERE
+  either way), so **no new code is needed**: run plain `refresh()` over
+  2020-01-01..2026-06-19, ideally in a fresh billing month for $0.
 
 This is why **themes-via-SQL is the correct Phase 3 default**, and why the
 `mean_embedding` / `embedding_dispersion` features deserve skepticism.

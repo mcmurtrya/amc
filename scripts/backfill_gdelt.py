@@ -1,18 +1,21 @@
 """Plan and execute a GDELT GKG backfill to fill the headlines coverage gaps.
 
-The `headlines` corpus currently has a large hole (only 2020-01..2021-08 is
-continuous, plus a 2024-01 fragment). This tool finds the missing months and,
-optionally, fills them — safely.
+This tool finds the missing days in the target range and, optionally, fills
+them — safely. Gap detection is **day-granular**: chunk upserts are atomic and
+chunks are whole-day-aligned, so a crash mid-backfill leaves complete days
+behind and "day with >=1 row" is exact. (Month granularity was not: the
+2026-07-02 overheat crash truncated 2016-11 at the 21st, and a month-level
+resume would have silently skipped Nov 22-30.)
 
 Three modes, increasingly committal:
 
-  --gaps      (default) Report which months are missing in the target range.
+  --gaps      (default) Report which days are missing in the target range.
               Reads the local DuckDB only; no BigQuery, no credentials needed.
   --estimate  Add a BigQuery *dry run* per gap chunk to report bytes scanned and
               the $ cost to fill the gaps. Free (dry runs are not billed).
   --execute   Actually pull the missing chunks and upsert them, with a hard
               per-chunk `--max-gb` cap on bytes billed so a mistake cannot run up
-              a bill. Idempotent: months already present are skipped.
+              a bill. Idempotent: days already present are skipped.
 
 --estimate / --execute require GOOGLE_APPLICATION_CREDENTIALS (BigQuery Data
 Viewer + Job User + Read Session User), exactly like `metals.data.gdelt`.
@@ -51,31 +54,34 @@ PRICE_USD_PER_TB = 6.25  # BigQuery on-demand (US); first 1 TB/month is free.
 FREE_TIER_TB = 1.0
 
 
-def present_months(conn) -> set[str]:
-    """Set of 'YYYY-MM' strings that already have >=1 headline row."""
+def present_days(conn) -> set[str]:
+    """Set of 'YYYY-MM-DD' strings that already have >=1 headline row.
+
+    Day granularity is exact here: every ingest path upserts atomically in
+    whole-day-aligned chunks, so a day with any rows is a complete day.
+    """
     rows = conn.execute(
-        "SELECT DISTINCT strftime(timestamp_utc, '%Y-%m') FROM headlines"
+        "SELECT DISTINCT strftime(timestamp_utc, '%Y-%m-%d') FROM headlines"
     ).fetchall()
     return {r[0] for r in rows if r[0]}
 
 
 def gap_ranges(start: str, end: str, present: set[str]) -> list[tuple[str, str]]:
-    """Contiguous runs of missing months in [start, end], as (first_day, last_day)."""
-    months = pd.period_range(pd.Timestamp(start), pd.Timestamp(end), freq="M")
+    """Contiguous runs of missing days in [start, end], as (first_day, last_day)."""
+    days = pd.date_range(pd.Timestamp(start).normalize(), pd.Timestamp(end).normalize(), freq="D")
     ranges: list[tuple[str, str]] = []
-    run: list[pd.Period] = []
+    run: list[pd.Timestamp] = []
 
     def flush() -> None:
         if run:
-            lo, hi = run[0], run[-1]
-            ranges.append((lo.start_time.date().isoformat(), hi.end_time.date().isoformat()))
+            ranges.append((run[0].date().isoformat(), run[-1].date().isoformat()))
             run.clear()
 
-    for m in months:
-        if m.strftime("%Y-%m") in present:
+    for d in days:
+        if d.strftime("%Y-%m-%d") in present:
             flush()
         else:
-            run.append(m)
+            run.append(d)
     flush()
     return ranges
 
@@ -134,16 +140,16 @@ def main() -> None:
     args = ap.parse_args()
 
     with connection(read_only=True) as conn:
-        present = present_months(conn)
+        present = present_days(conn)
     gaps = gap_ranges(args.start, args.end, present)
 
     print(f"Target range : {args.start} .. {args.end}")
-    print(f"Months present: {len(present)}")
+    print(f"Days present (whole DB): {len(present)}")
     if not gaps:
         print("No gaps — corpus is continuous over the target range.")
         return
-    total_missing = sum(len(pd.period_range(lo, hi, freq="M")) for lo, hi in gaps)
-    print(f"Missing months: {total_missing}, in {len(gaps)} gap range(s):")
+    total_missing = sum(len(pd.date_range(lo, hi, freq="D")) for lo, hi in gaps)
+    print(f"Missing days: {total_missing}, in {len(gaps)} gap range(s):")
     for lo, hi in gaps:
         print(f"  - {lo} .. {hi}")
 
