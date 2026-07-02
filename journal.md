@@ -846,3 +846,101 @@ the expensive PAGE_TITLE/embedding work on a measured CV win. User decided:
    sanity-check the 2020/2022/2023 regimes. Cheap, leak-free, defensible.
 3. **Then** gate the multilingual PAGE_TITLE re-embed on the §7 CV bar.
 - DB untouched this session (code + tests + git only; no pulls, no GPU).
+
+---
+
+## 2026-07-02 (Phase 3 — migration 006/007 + wide GKG ingest)
+
+### Context
+Step 1 of the agreed "correctness before compute" sequencing: land the schema +
+ingest code so the 2015–2019 backfill can be pulled *wide* (titles for free).
+Session ran on **AYMStation (WSL2 laptop, RTX A1000)** — NOT the A6000 server.
+Important discovery: the two machines' DuckDB files had **diverged** (git syncs
+code, not data): this laptop's DB was missing `005_phase3_artifacts` and the
+four Phase 3 tables until today, while the server has them populated.
+
+### What I did
+- **Renamed `005_phase3_artifacts.sql` → `006_phase3_artifacts.sql`** (kills the
+  duplicate-005 prefix). Safe on every live DB state because the file is fully
+  `IF NOT EXISTS`: the server (applied under the old stem) re-runs it as a
+  no-op and keeps a stale tracking row; fresh/laptop DBs apply it normally.
+  Locked by `tests/test_migrations_runner.py` simulating all three states.
+- **New `007_headlines_page_title.sql`**: `page_title VARCHAR`, `src_lang
+  VARCHAR` on `headlines` (`ADD COLUMN IF NOT EXISTS` works on duckdb 1.5.3
+  with the index present).
+- **Widened the ingest** (`metals/data/gdelt.py`): `build_query` also selects
+  `Extras` + `TranslationInfo`; new pure extractors `extract_page_title`
+  (html.unescape once, collapse whitespace, 512-char cap, absent → None) and
+  `extract_src_lang` (empty → `'eng'`, `srclc:xx` → code, malformed → None);
+  `parse_gkg_rows` derives both and tolerates narrow (pre-007) frames by
+  landing NULLs; `upsert_headlines` upserts them with **COALESCE on conflict**
+  so a narrow re-pull can never clobber landed titles. Semantics rule:
+  **NULL `src_lang` = "not pulled wide", never English.**
+  `phase3_gkg_enrichment_probe.py` now imports the extractors (no regex drift).
+- **BigQuery dry-run estimates** (per convention, bytes + cost): backfill
+  2015-02-18→2019-12-31 **wide = 1.352 TB** ($8.45 on-demand full price; $0 if
+  split across 2 billing months; ~$2.20 in one month). Narrow same range =
+  1.125 TB → the wide increment is only **0.227 TB (~20%, $1.42)** — pulling
+  titles with the backfill is confirmed near-free vs a later 1.15 TB re-scan.
+  Title UPDATE-backfill 2020-01→2026-06-19 = **1.154 TB** ($7.21 / $0 across
+  2 months). Heaviest year: 2016 at 0.347 TB wide. NB the assessment's ~0.5 TB
+  backfill estimate was ~2.4× optimistic.
+- **Live landing verification** (one-day pull 2024-06-01, 0.41 GiB, through
+  the real build_query→BQ→parse→upsert path into a throwaway DB): schema match
+  exact; 18,633 rows; **99.53% title coverage; 0 undecoded entities; 27.1%
+  English** (assessment said ~30%); **100.000% headline_id match** against the
+  live 63.3M-row table (ON CONFLICT hits existing PKs — the future title
+  backfill can use the plain upsert); COALESCE guard held under a simulated
+  narrow re-pull; 1 intra-batch PK collision (pre-existing last-write-wins
+  dedup semantics, headline_id = ts + url[:200]).
+- **Adversarial review (3 lenses + verification agents)** confirmed one major:
+  with migration 007 absent from a checkout (e.g. forgotten `git add`),
+  `compact_headlines.py` would rebuild the canonical schema without the new
+  columns and its column-intersection copy would **silently discard populated
+  titles while row-count verification passes**. Fixed two layers: all files
+  explicitly tracked in the commit, and `compact_headlines.py` now **refuses
+  to drop source columns** missing from the canonical schema unless
+  `--allow-column-drop` is passed (guard verified live both ways). Also
+  future-proofed the runner tests against a future 008 migration.
+- CLAUDE.md sharp edges rewritten (005-conflict resolved → stem-tracking note,
+  page_title/src_lang facts, NULL-src_lang rule). 241 tests pass (+12), ruff
+  check/format clean, mypy at HEAD parity (41 pre-existing stub errors).
+
+### What I learned
+- `compact_headlines`-style "rebuild schema from the migration glob, copy
+  intersecting columns" passes row-count verification while losing columns —
+  a failure class invisible to working-tree tests (the untracked file exists
+  locally). Guard in the tool, not just the process.
+- Wide-vs-narrow GKG scan is only ~+20% bytes: `V2Themes` (in the WHERE) is
+  the fat column, so `Extras` rides along cheaply.
+- The title UPDATE-backfill may not need a dedicated column-update path at
+  all: the plain wide `refresh()` upsert updates titles on conflict, and its
+  extra scan cost over a minimal 4-column query is just V2Tone +
+  SourceCommonName. Measure both dry-runs before building anything.
+
+### DB mutations this session
+- **Laptop DB only**: applied `006_phase3_artifacts` + `007_headlines_page_title`
+  (Phase 3 tables now exist here, empty; `headlines` gained two NULL columns).
+- **Server DB untouched** — run `uv run python -m metals.data.migrations.runner`
+  there BEFORE any ingest: `upsert_headlines` now requires 007 and fails with a
+  Binder error on a pre-007 DB.
+- Real `headlines` data untouched on both machines. The verification pull
+  landed only in a deleted throwaway DB — deliberately, so `backfill_gdelt.py`
+  month-gap detection stays clean (a stray 2015 sliver would mask a whole
+  month from the backfill).
+- BigQuery spend: ~0.8 GiB scanned (2× one-day pulls; dry-runs are free) —
+  negligible against the 1 TB/month free tier.
+
+### Next session
+1. **Decide + run the 2015–2019 wide backfill** (user green-light + machine
+   choice pending): target the *server* DB presumably (it's the compute box);
+   split across the Jul/Aug billing boundary for $0 or accept ~$2.20 in one
+   go. `backfill_gdelt.py` already pulls wide via the shared `build_query`;
+   its default `--max-gb 100` per chunk is comfortably above the ~30 GB/month
+   wide scan. Remember: migrations on the server first.
+2. **Title UPDATE-backfill 2020–2026** (1.154 TB, $0 across 2 months): compare
+   dry-runs of plain wide `refresh()` vs a minimal 4-column pull before
+   deciding whether any new code is even needed.
+3. **Option C clustering baseline** (unchanged): `include_embeddings` flag,
+   add tone to the context vector, aggregate→context→cluster→analyze, regime
+   sanity checks.
