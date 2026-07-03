@@ -1019,3 +1019,78 @@ backfill data lives in the **laptop** DB; the server still has none of it.
    ($0 across the billing boundary; ~1.23 TB).
 3. Decide the server-DB sync path (re-pull vs copy the 51 GB file) before any
    server-side Phase 3 compute.
+
+---
+
+## 2026-07-02 (evening — 2020–2026 title backfill: the fast way, after the slow way)
+
+### Context
+User call: finish the title UPDATE-backfill now, in July, at the quoted
+~$7.71 rather than waiting for August's free tier. What was supposed to be
+"plain `refresh()`, no new code" turned into a redesign — and a much better
+tool.
+
+### What I did
+- **Started the naive path** (`refresh()` per month window, the OOM-safe
+  driver pattern) and watched it crawl: ~10 min per 10-day chunk vs ~60 s in
+  the afternoon. Diagnosis: this workload *updates* every row (all PKs exist),
+  and DuckDB's per-row `ON CONFLICT DO UPDATE` through the 140M-row ART PK
+  index is the bottleneck — a 30–40 h job. Killed it after chunk 3 of 236
+  (the applied updates are idempotent, no cleanup needed). A second, additive
+  problem: title-era `Extras` blobs (PAGE_LINKS etc.) made even the pure pull
+  ~8.5 min/month.
+- **Two-phase replacement** (`scripts/backfill_titles.py`, promoted from
+  scratchpad with tests):
+  1. `pull` — extract PAGE_TITLE **inside BigQuery** (`REGEXP_EXTRACT` on
+     Extras) so the download is ~100-byte strings, not multi-KB blobs. Same
+     scan billing (columns scanned, not bytes downloaded), ~5× faster wall
+     clock. Wrote per-chunk parquet, atomic + skip-if-exists (crash-resume
+     for free), **zero DuckDB contact** (no writer-lock hazard). Client-side
+     normalisation reuses `extract_src_lang` and replicates
+     `extract_page_title`'s post-regex steps; **parity-verified: 0 mismatches
+     on 323K live rows** against the python-extracted January parquet.
+  2. `apply` — yearly bulk `UPDATE … FROM read_parquet(...)` (hash join, PK
+     index untouched). Pilot: 907K rows in **0.77 s**.
+- **Ran it**: 77 month-window processes pulled 2020-02 → 2026-06-19 in
+  ~98 min (~50–75 s/month); apply updated **63,266,028 rows in 31 s** total.
+  End-to-end ~1.7 h vs the 30–40 h naive path (~1000× on the update step).
+- **Verified**: 2020–2026 titled 99.3–99.6% per year, `src_lang` ~100%
+  everywhere; 2019 at 24.7% titled = exactly the 2019-09-22-onset fraction of
+  the year; 2015–2018 correctly 0% titled / 100% lang. Sample titles are real
+  headlines. ~99.99% of parquet rows matched existing PKs.
+- Docs: CLAUDE.md sharp edge rewritten (title state, the parquet artifact,
+  "never conflict-update a big indexed table" rule); assessment §3 correction
+  block updated to "ran the same evening" with the method + numbers.
+
+### What I learned
+- **Upsert ≠ update.** The identical `ON CONFLICT` upsert that ingests fresh
+  rows at ~60 s/chunk collapses to ~10 min/chunk when every row conflicts.
+  For column fills on existing rows: pull to parquet, then bulk
+  `UPDATE … FROM` — 63M rows in 31 s.
+- **Push extraction into BigQuery when the raw column is fat.** Billing is
+  per column *scanned* either way; downloading the regex group instead of
+  `Extras` cut transfer ~5× and memory to trivial.
+- The per-chunk parquet directory doubles as a **portable artifact**: the
+  server gets identical titles in ~30 s (`backfill_titles.py apply`) with $0
+  BigQuery spend. Worth keeping `data/raw/title_backfill/` (7.6 GB) around
+  until the server is synced.
+
+### DB mutations this session
+- **Laptop DB only**: `page_title`/`src_lang` filled on all 63.27M 2020+
+  rows (plus the 907K 2020-01 rows via the pilot). Row count unchanged
+  (139.9M). File 51.7 → 54.4 GB (update row-group rewrites); disk fine
+  (758 GB free), compaction skipped as unnecessary.
+- `data/raw/title_backfill/`: 81 parquet files, 7.6 GB (gitignored), keep for
+  the server sync.
+- **BigQuery July 2026 final: 2.533 TB billed → $9.58** past the free tier
+  ($2.33 for the 2015–2019 backfill, ~$7.25 for the title pull — under the
+  $7.71 quote since the fast query skips V2Tone/SourceCommonName).
+
+### Next session
+1. **Option C clustering baseline** (unchanged; text signals now maximal:
+   tone+themes 2015+, titles 2019-09-22+, languages everywhere).
+2. **Server DB sync**: migrations runner, then either copy the 54 GB DuckDB
+   file, or re-run the 2015–2019 backfill (~$8.45 or split months) + apply
+   the title parquet. Decide before server-side Phase 3 compute.
+3. Forward-fill note: corpus still ends 2026-06-19; next `refresh()` pull of
+   recent weeks lands wide (titles included) by default.
