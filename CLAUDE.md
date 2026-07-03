@@ -85,15 +85,19 @@ a CUDA 12.4 image); CPU runs are slow.
   **2015-02-18 → 2026-06-19** (backfilled 2026-07-02; the server DB is still 2020+
   and needs migrations before any ingest). One known upstream hole: **2017-08-29 is
   empty in GDELT itself**. GKG `Extras` carries `PAGE_TITLE` **only from
-  2019-09-22** (~99.2% coverage after; 0% before — those rows can never get titles
-  from GKG, only URL slugs). `src_lang` covers all dates (~32% English 2015–2019).
-  Rows ingested pre-007 (all of 2020+) stay NULL `page_title`/`src_lang` until
-  re-pulled wide — plain `refresh()` over 2020–2026 does it, no new code needed
-  (~1.23 TB; run in a fresh billing month). NULL `src_lang` means "not pulled
-  wide", **not** English (`'eng'`). Backfill gap detection is **day-granular**
+  2019-09-22** (0% before — those rows can never get titles from GKG, only URL
+  slugs). On this laptop DB the title backfill is **done** (2026-07-02 evening):
+  `page_title` is ~99.3–99.6% within 2019-09-22 → 2026-06-19 and `src_lang` is
+  ~100% everywhere (~32% English 2015–2019). NULL `src_lang` still means "not
+  pulled wide", **not** English (`'eng'`) — relevant for the server DB and future
+  pulls. The pulled titles live in `data/raw/title_backfill/*.parquet` (7.6 GB) —
+  the server can apply them in ~30 s with `scripts/backfill_titles.py apply`, no
+  BigQuery re-scan. Backfill gap detection is **day-granular**
   (`scripts/backfill_gdelt.py`); long pulls should run **one process per month
   window** — a single long-lived process accumulates RAM and gets OOM-killed on
-  the 15 GB WSL2 VM.
+  the 15 GB WSL2 VM. **Never fill columns on existing rows via the `refresh()`
+  upsert**: per-row `ON CONFLICT` through the ART index runs ~1000× slower than
+  `scripts/backfill_titles.py`'s pull-to-parquet + yearly bulk `UPDATE … FROM`.
 - **Secrets** live in `.env` (copy from `.env.example`); needs at least `FRED_API_KEY`.
   BigQuery (GDELT) needs `GOOGLE_APPLICATION_CREDENTIALS`.
 - **Windows/OneDrive:** keep the venv outside OneDrive (`UV_PROJECT_ENVIRONMENT`) to

@@ -72,7 +72,7 @@ WHERE list_contains(from_json(themes,'["VARCHAR"]'),'ECON_GOLDPRICE')
 **2015-02-18 → 2026-06-19 continuous** at day granularity, 139.9M rows, with
 exactly one hole — **2017-08-29 is empty upstream in GDELT itself** (BigQuery
 returns 0 rows for the whole day; the neighbouring days are visibly depressed
-too). 1.373 TB scanned in July ($2.33 past the free tier). The regime table:
+too). The 2015–2019 pull itself scanned ~1.35 TB. The regime table:
 
 | Regime | In range? |
 |---|---|
@@ -114,11 +114,17 @@ Consequences:
 - `src_lang` has no such limit: 100% populated for all backfilled rows
   (TranslationInfo exists from GKG 2.0's start). English share 2015–2019 is
   32.4% (24.9M of 76.6M rows).
-- The planned title UPDATE-backfill **2020→2026 is unaffected** (all title-era).
-  Dry-runs 2026-07-02: plain wide `refresh()` = 1.233 TB vs a minimal 4-column
-  variant = 1.154 TB — only $0.49 apart (V2Themes is scanned by the WHERE
-  either way), so **no new code is needed**: run plain `refresh()` over
-  2020-01-01..2026-06-19, ideally in a fresh billing month for $0.
+- The title UPDATE-backfill **2020→2026 ran the same evening** (2026-07-02):
+  63.27M rows now carry `page_title` (99.3–99.6% per year) + `src_lang` (~100%).
+  The naive path — plain wide `refresh()` — was killed after measuring
+  ~10 min/chunk: per-row `ON CONFLICT DO UPDATE` through the 140M-row ART PK
+  index is a 30–40 h job. `scripts/backfill_titles.py` replaced it: extract
+  PAGE_TITLE *inside* BigQuery (download ~100-byte strings, not multi-KB
+  Extras blobs; zero-mismatch parity vs the python extractor on 323K rows),
+  land per-chunk parquet, then yearly bulk `UPDATE … FROM` (63.27M rows in
+  31 s). The parquet (`data/raw/title_backfill/`, 7.6 GB) is portable — the
+  server applies it in ~30 s without re-scanning BigQuery. July 2026 total
+  BigQuery spend across both backfills: 2.533 TB → $9.58.
 
 This is why **themes-via-SQL is the correct Phase 3 default**, and why the
 `mean_embedding` / `embedding_dispersion` features deserve skepticism.
