@@ -124,7 +124,9 @@ def _load_embeddings_for(df: pd.DataFrame) -> np.ndarray:
     return embed_texts(df["article_url"].astype(str).tolist())
 
 
-def run_aggregate(start: str | None = None, end: str | None = None) -> None:
+def run_aggregate(
+    start: str | None = None, end: str | None = None, use_embeddings: bool = True
+) -> None:
     """Stream the daily text-feature aggregation one month at a time.
 
     Each month's headlines are embedded fresh on the GPU (bounded chunk,
@@ -134,15 +136,23 @@ def run_aggregate(start: str | None = None, end: str | None = None) -> None:
     per-chunk outputs are independent, so each month is upserted as it finishes
     (resumable, bounded memory). Replaces the old single ``fetchdf()`` of all
     63 M rows + the 97 GB embedding vstack.
+
+    ``use_embeddings=False`` (Option C) skips encoding entirely — tone means and
+    article counts only, no GPU needed; ``mean_embedding``/``embedding_dispersion``
+    land NULL and the context stage must run with ``--no-text-embeddings`` too.
     """
     _print_stage("aggregate")
     from metals.data.db import connection
-    from metals.features.embeddings import embed_texts
     from metals.features.text_daily import (
         _parse_themes_field,
         aggregate_daily,
         upsert_daily,
     )
+
+    if use_embeddings:
+        from metals.features.embeddings import embed_texts
+    else:
+        print("  (embeddings off — tone/count aggregation only)")
 
     cols = (
         "timestamp_utc, headline_id, source, themes, article_url, "
@@ -166,7 +176,12 @@ def run_aggregate(start: str | None = None, end: str | None = None) -> None:
             continue
         hl["themes_list"] = hl["themes"].apply(_parse_themes_field)
         hl["timestamp_utc"] = pd.to_datetime(hl["timestamp_utc"])
-        emb = embed_texts(hl["article_url"].astype(str).tolist(), batch_size=256, use_cache=False)
+        if use_embeddings:
+            emb = embed_texts(
+                hl["article_url"].astype(str).tolist(), batch_size=256, use_cache=False
+            )
+        else:
+            emb = None
         out = aggregate_daily(hl, embeddings=emb)
         n = upsert_daily(out)  # separate write connection, no overlap with read
         total_rows += len(hl)
@@ -262,7 +277,9 @@ def run_topics(
     print(f"daily_topic_prevalence rows written = {n:,}  (BERTopic sample, partial day coverage)")
 
 
-def run_context(target_metal: str, train_until: str | None = None) -> pd.DataFrame:
+def run_context(
+    target_metal: str, train_until: str | None = None, include_text_embeddings: bool = True
+) -> pd.DataFrame:
     _print_stage("context")
     from metals.features.context import ContextConfig, build_context
     from metals.features.loaders import load_macro, load_prices
@@ -277,7 +294,8 @@ def run_context(target_metal: str, train_until: str | None = None) -> pd.DataFra
     if prices.empty or macro.empty:
         raise RuntimeError("prices or macro empty — run Phase 1 ingestion first.")
     has_embeddings = (
-        text is not None
+        include_text_embeddings
+        and text is not None
         and not text.empty
         and "mean_embedding" in text.columns
         and text["mean_embedding"].notna().any()
@@ -294,7 +312,7 @@ def run_context(target_metal: str, train_until: str | None = None) -> pd.DataFra
         text_daily=text,
         topic_prevalence=topics,
         pca_fit_until=train_until,
-        config=ContextConfig(target_metal=target_metal),
+        config=ContextConfig(target_metal=target_metal, include_embeddings=include_text_embeddings),
     )
     print(f"context shape = {ctx.shape}  cols includes {[c for c in ctx.columns[:6]]} ...")
     return ctx
@@ -304,6 +322,9 @@ def run_cluster(
     context: pd.DataFrame, train_until: str | None, model_version: str | None = None
 ) -> str:
     _print_stage("cluster")
+    from dataclasses import asdict
+
+    from metals.eval.harness import register_run
     from metals.models.clustering import (
         ClusteringConfig,
         assign_clusters,
@@ -329,6 +350,22 @@ def run_cluster(
     n_a = upsert_assignments(assignments, model_version=pipeline.model_version)
     n_c = upsert_centroids(centroids, model_version=pipeline.model_version)
     print(f"cluster_assignments rows = {n_a:,}, centroids = {n_c}")
+
+    run_id = register_run(
+        name=pipeline.model_version,
+        model_type="umap_hdbscan_clustering",
+        target_type="unsupervised_regimes",
+        config={
+            "clustering": asdict(cfg),
+            "train_until": train_until,
+            "n_train_rows": int(len(train)),
+            "train_range": [str(train.index.min()), str(train.index.max())],
+            "n_features": int(context.shape[1]),
+            "feature_names": list(context.columns),
+        },
+        notes=f"assignments={n_a}, centroids={n_c}",
+    )
+    print(f"registered eval-harness run {run_id}")
     return pipeline.model_version
 
 
@@ -424,10 +461,13 @@ def run_label(
     # of materializing the whole ~63 M-row corpus.
     lo = str(pd.Timestamp(assignments["timestamp_utc"].min()))
     hi = str(pd.Timestamp(assignments["timestamp_utc"].max()) + pd.Timedelta(days=1))
+    # Prefer the real article title (populated from 2019-09-22, backfilled
+    # 2026-07-02) and fall back to the URL slug for older rows.
     with connection(read_only=True) as conn:
         headlines = conn.execute(
-            "SELECT timestamp_utc, article_url AS headline, article_url FROM ("
-            "  SELECT timestamp_utc, article_url, row_number() OVER ("
+            "SELECT timestamp_utc, COALESCE(page_title, article_url) AS headline, "
+            "article_url FROM ("
+            "  SELECT timestamp_utc, page_title, article_url, row_number() OVER ("
             "    PARTITION BY date_trunc('day', timestamp_utc) ORDER BY timestamp_utc"
             "  ) AS rn FROM headlines "
             "  WHERE timestamp_utc >= ? AND timestamp_utc < ?"
@@ -469,6 +509,13 @@ def main() -> None:
     )
     parser.add_argument(
         "--train-until", default=None, help="ISO date; clustering trains on data up to this date."
+    )
+    parser.add_argument(
+        "--no-text-embeddings",
+        action="store_true",
+        help="Option C: skip URL-embedding features end to end — aggregate "
+        "computes tone/counts only (no GPU) and the context vector drops "
+        "text_pca_*/embedding_dispersion while keeping tone.",
     )
     parser.add_argument(
         "--topics-method",
@@ -516,9 +563,12 @@ def main() -> None:
     if "gdelt" in do:
         run_gdelt(args.start, args.end)
     if "embed" in do:
-        run_embed(args.start, args.end)
+        if args.no_text_embeddings:
+            print("skipping embed stage (--no-text-embeddings).")
+        else:
+            run_embed(args.start, args.end)
     if "aggregate" in do:
-        run_aggregate(args.start, args.end)
+        run_aggregate(args.start, args.end, use_embeddings=not args.no_text_embeddings)
     if "topics" in do:
         run_topics(
             method=args.topics_method,
@@ -531,12 +581,20 @@ def main() -> None:
 
     context = None
     if "context" in do:
-        context = run_context(args.target_metal, train_until=args.train_until)
+        context = run_context(
+            args.target_metal,
+            train_until=args.train_until,
+            include_text_embeddings=not args.no_text_embeddings,
+        )
 
     model_version = args.model_version
     if "cluster" in do:
         if context is None:
-            context = run_context(args.target_metal, train_until=args.train_until)
+            context = run_context(
+                args.target_metal,
+                train_until=args.train_until,
+                include_text_embeddings=not args.no_text_embeddings,
+            )
         model_version = run_cluster(context, args.train_until, model_version=model_version)
 
     # analyze before label, matching STAGES order.

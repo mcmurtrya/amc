@@ -108,6 +108,98 @@ def test_build_context_with_text_features_adds_pca_columns():
     pca_cols = [c for c in ctx.columns if c.startswith("text_pca_")]
     assert 1 <= len(pca_cols) <= 8
     assert "text_pca" in artifacts
+    # Tone means ride along whenever text_daily carries them — lagged one
+    # trading day (day-t text spans the full UTC day, so it informs day t+1).
+    for col in ("mean_tone_overall", "mean_tone_positive", "mean_tone_negative"):
+        assert col in ctx.columns
+    lagged_idx = prices.index[51 : 51 + n_text]
+    np.testing.assert_allclose(
+        ctx.loc[lagged_idx, "mean_tone_overall"].to_numpy(),
+        text["mean_tone_overall"].to_numpy(),
+    )
+
+
+def test_build_context_include_embeddings_false_keeps_tone_drops_embeddings():
+    """Option C: the flag must drop every URL-embedding feature while the tone
+    means and n_articles stay — including when the aggregate ran embeddings-free
+    (mean_embedding all None), which is the real Option-C data shape."""
+    prices = _toy_prices(n=200)
+    macro = _toy_macro(prices.index)
+    rng = np.random.default_rng(3)
+    n_text = 100
+    sub_idx = prices.index[50 : 50 + n_text]
+
+    def _text(with_embeddings: bool) -> pd.DataFrame:
+        return pd.DataFrame(
+            {
+                "timestamp_utc": sub_idx,
+                "metal": ["market"] * n_text,
+                "n_articles": rng.integers(5, 50, n_text),
+                "embedding_dispersion": rng.uniform(0.1, 0.4, n_text)
+                if with_embeddings
+                else [float("nan")] * n_text,
+                "mean_embedding": [rng.normal(0, 1, 32).astype(np.float32) for _ in range(n_text)]
+                if with_embeddings
+                else [None] * n_text,
+                "mean_tone_overall": rng.normal(0, 1, n_text),
+                "mean_tone_positive": rng.uniform(0, 2, n_text),
+                "mean_tone_negative": rng.uniform(0, 2, n_text),
+            }
+        )
+
+    cfg = ContextConfig(target_metal="gold", include_embeddings=False)
+    lagged_idx = prices.index[51 : 51 + n_text]
+    for text in (_text(True), _text(False)):
+        ctx, artifacts = build_context(prices=prices, macro_wide=macro, text_daily=text, config=cfg)
+        assert "n_articles" in ctx.columns
+        assert "mean_tone_overall" in ctx.columns
+        assert "embedding_dispersion" not in ctx.columns
+        assert not [c for c in ctx.columns if c.startswith("text_pca_")]
+        assert "text_pca" not in artifacts
+        np.testing.assert_allclose(
+            ctx.loc[lagged_idx, "mean_tone_overall"].to_numpy(),
+            text["mean_tone_overall"].to_numpy(),
+        )
+    # Days without a (lagged) text row carry NaN tone (never a fake neutral 0).
+    ctx, _ = build_context(prices=prices, macro_wide=macro, text_daily=_text(False), config=cfg)
+    no_text_days = prices.index.difference(lagged_idx)
+    assert ctx.loc[no_text_days, "mean_tone_overall"].isna().all()
+
+
+def test_build_context_text_and_topics_lag_one_trading_day():
+    """Day-t text spans the full UTC calendar day, including hours after the
+    futures close — so it may only inform day t+1's context row, never day t's
+    (CLAUDE.md: a day's text must strictly precede the forward returns it
+    predicts)."""
+    prices = _toy_prices(n=60)
+    macro = _toy_macro(prices.index)
+    t = prices.index[10]
+    text = pd.DataFrame(
+        {
+            "timestamp_utc": [t],
+            "metal": ["market"],
+            "n_articles": [7],
+            "embedding_dispersion": [float("nan")],
+            "mean_embedding": [None],
+            "mean_tone_overall": [5.0],
+            "mean_tone_positive": [1.0],
+            "mean_tone_negative": [6.0],
+        }
+    )
+    topics = pd.DataFrame({"topic_0": [0.9]}, index=[t])
+    ctx, _ = build_context(
+        prices=prices,
+        macro_wide=macro,
+        text_daily=text,
+        topic_prevalence=topics,
+        config=ContextConfig(target_metal="gold", include_embeddings=False),
+    )
+    assert np.isnan(ctx.loc[t, "mean_tone_overall"])
+    assert ctx.loc[prices.index[11], "mean_tone_overall"] == 5.0
+    assert ctx.loc[t, "n_articles"] == 0.0
+    assert ctx.loc[prices.index[11], "n_articles"] == 7.0
+    assert ctx.loc[t, "topic_0"] == 0.0
+    assert ctx.loc[prices.index[11], "topic_0"] == 0.9
 
 
 def test_build_context_pca_fit_until_prevents_lookahead():
@@ -149,7 +241,9 @@ def test_build_context_pca_fit_until_prevents_lookahead():
 
     pca_cols = [c for c in ctx_a.columns if c.startswith("text_pca_")]
     assert pca_cols
-    train_dates = sub_idx[:51]
+    # Text is lagged one trading day, so rows [51:101] carry the embeddings
+    # from text days sub_idx[:50] — all at or before the boundary.
+    train_dates = prices.index[51:101]
     a = ctx_a.loc[train_dates, pca_cols].to_numpy()
     b = ctx_b.loc[train_dates, pca_cols].to_numpy()
     assert np.allclose(a, b, atol=1e-6), (

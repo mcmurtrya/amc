@@ -236,6 +236,13 @@ def upsert_daily(df: pd.DataFrame) -> int:
     work["embedding_dim"] = df["mean_embedding"].apply(
         lambda a: int(len(a)) if a is not None else None
     )
+    # NaN dispersion (embeddings-free aggregation, or single-article days) must
+    # land as SQL NULL, not a float NaN, so the COALESCE guard below can see it.
+    work["embedding_dispersion"] = (
+        work["embedding_dispersion"]
+        .astype(object)
+        .where(work["embedding_dispersion"].notna(), None)
+    )
     cols = [
         "timestamp_utc",
         "metal",
@@ -261,9 +268,15 @@ def upsert_daily(df: pd.DataFrame) -> int:
             FROM incoming_text_daily
             ON CONFLICT (timestamp_utc, metal) DO UPDATE SET
                 n_articles           = EXCLUDED.n_articles,
-                mean_embedding       = EXCLUDED.mean_embedding,
-                embedding_dim        = EXCLUDED.embedding_dim,
-                embedding_dispersion = EXCLUDED.embedding_dispersion,
+                -- COALESCE: an embeddings-free re-run (Option C tone refresh)
+                -- must never clobber embedding aggregates an earlier GPU run
+                -- landed; a real re-encode carries non-NULLs and still wins.
+                mean_embedding       = COALESCE(EXCLUDED.mean_embedding,
+                                                daily_text_features.mean_embedding),
+                embedding_dim        = COALESCE(EXCLUDED.embedding_dim,
+                                                daily_text_features.embedding_dim),
+                embedding_dispersion = COALESCE(EXCLUDED.embedding_dispersion,
+                                                daily_text_features.embedding_dispersion),
                 mean_tone_overall    = EXCLUDED.mean_tone_overall,
                 mean_tone_positive   = EXCLUDED.mean_tone_positive,
                 mean_tone_negative   = EXCLUDED.mean_tone_negative

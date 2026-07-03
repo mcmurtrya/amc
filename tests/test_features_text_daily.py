@@ -219,3 +219,34 @@ def test_upsert_and_load_daily_round_trip():
     assert set(back["metal"].unique()) == {MARKET}
     sample = back.iloc[0]["mean_embedding"]
     assert sample is None or sample.shape == (3,)
+
+
+def test_upsert_daily_tone_only_rerun_preserves_embeddings():
+    """An embeddings-free re-run (Option C tone refresh) over days that already
+    carry embedding aggregates must not NULL them out — tone still updates."""
+    from metals.data.migrations.runner import apply_migrations
+    from metals.features.text_daily import load_daily, upsert_daily
+
+    apply_migrations(verbose=False)
+    headlines = _toy_headlines()
+    embeddings = np.array([[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]], dtype=np.float32)
+    upsert_daily(aggregate_daily(headlines, embeddings=embeddings))
+    before = load_daily(metal=MARKET)
+    assert any(v is not None for v in before["mean_embedding"])
+
+    tone_only = aggregate_daily(headlines, embeddings=None)
+    assert tone_only["mean_embedding"].isna().all()
+    tone_only["mean_tone_overall"] = tone_only["mean_tone_overall"] + 1.0
+    upsert_daily(tone_only)
+
+    after = load_daily(metal=MARKET)
+    for b, a in zip(before["mean_embedding"], after["mean_embedding"], strict=True):
+        if b is None:
+            assert a is None
+        else:
+            np.testing.assert_array_equal(a, b)
+    pd.testing.assert_series_equal(after["embedding_dispersion"], before["embedding_dispersion"])
+    np.testing.assert_allclose(
+        after["mean_tone_overall"].to_numpy(),
+        before["mean_tone_overall"].to_numpy() + 1.0,
+    )
