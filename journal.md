@@ -1094,3 +1094,95 @@ tool.
    the title parquet. Decide before server-side Phase 3 compute.
 3. Forward-fill note: corpus still ends 2026-06-19; next `refresh()` pull of
    recent weeks lands wide (titles included) by default.
+
+---
+
+## 2026-07-03 (Option C clustering baseline — landed)
+
+### Context
+The long-queued Option C: a defensible, embeddings-free scenario clustering
+on the signals the GDELT assessment trusts (tone + themes), now running on
+the full 2015+ corpus backfilled earlier today. Laptop session, no GPU.
+
+### What I did
+- **`ContextConfig.include_embeddings` flag** (default True = old behaviour):
+  off drops `text_pca_*`/`embedding_dispersion`; the V2Tone daily means
+  (`mean_tone_overall/positive/negative`) now always join the context vector.
+  `--no-text-embeddings` threads it end-to-end: `aggregate` runs tone-only
+  (no torch import, no GPU), `embed` is skipped, `context` sets the flag.
+  `run_cluster` now **registers every fit with the eval harness** (config,
+  train range, feature names, git hash); the `label` stage feeds the LLM
+  `COALESCE(page_title, article_url)` — real titles where they exist.
+- **Aggregate + topics on the laptop**: 139,904,911 headlines → 4,092 daily
+  `market` rows (8.5 min) + 52,524 topic-prevalence rows (seconds). Tone
+  face-validity on famous days: COVID crash Monday 2020-03-16 the most
+  negative (-1.76), 2018-06-19 trade-war escalation -0.96, Brexit -0.79.
+- **Adversarial review before committing** (31-agent workflow: 3 lenses ×
+  2 refuters per finding): 14 raw findings, **3 confirmed** (all minor),
+  11 refuted. Fixed all three:
+  1. *Same-day text vs forward returns* (inherited by every text feature,
+     newly load-bearing through tone): daily text aggregates span the full
+     UTC day incl. post-close hours, violating "a day's text must strictly
+     precede the forward returns it predicts". Fix at the input layer —
+     **all text-derived context features (tone, counts, topics, embeddings)
+     now join lagged one trading day**; day-t price features stay as-of the
+     close. Regression test pins the lag.
+  2. *Tone-only re-runs NULLing embedding aggregates*: `upsert_daily` now
+     COALESCEs the embedding columns (and lands NaN dispersion as SQL NULL
+     so the guard is real) — same pattern as the headlines title upsert.
+  3. *Nonstationary tone levels under train-anchored z-scores*: measured
+     before acting — OOS (2024+) tone shift is +0.83σ but the yearly path
+     tracks true stress years (2022 -0.97, 2020 -0.85, calm 2024 -0.30),
+     i.e. mostly signal, not corpus drift; and the feared OOS noise-dump
+     did not occur (2024 assigns 87% to an existing cluster at normal
+     confidence). Kept levels; documented here.
+- **Final model `phase3_optC_tone_lag1_2024split`** (harness run
+  cb2e33a7…): 39 features, 2,148 train rows 2015-02-19 → 2023-12-29,
+  assignments through 2026-06-19 (2024+ strictly OOS via
+  `approximate_predict`), 7 clusters + 4.7% noise, mean confidence 0.86.
+- **Regime sanity — all five targets recovered**:
+  | regime | dominant cluster |
+  |---|---|
+  | 2015–16 commodity bust | 0 (69%; pure-2015 cluster) |
+  | Brexit window | 2 (100%; 2016–17 regime) |
+  | 2018 trade war | 6 (98%) |
+  | 2020 COVID crash | 4 (48%, an 84%-2020 cluster) + 44% noise on the crash weeks |
+  | 2022 inflation shock | 1 (99%) |
+  | 2023 banking stress | 1 (100%; same high-rates regime) |
+  OOS 2024 → 87% cluster 1 (regime continuation); OOS 2025–26 fragments
+  (25% c6 / 24% c3 / 24% noise) — the record gold bull reads as genuinely
+  novel rather than force-fitted, which is the honest behaviour.
+- **Forward-return separation (gold, 20d, descriptive)**: bust cluster 0 is
+  the only negative regime (-0.9%, 40% hit); easing-2019 cluster 5 the
+  strongest bull (+4.1%, 86% hit); COVID cluster 4 +2.9% (73%). Not a
+  trading claim — analyze-stage description, now free of same-day text
+  leakage after the lag fix.
+
+### What I learned
+- The adversarial-review pattern earns its cost: the same-day-text finding
+  was invisible to tests (alignment is a convention, not a crash) and the
+  cheap fix landed *before* the baseline's numbers went anywhere.
+- Measure before stationarizing: the "drift" in tone is mostly regime
+  signal; a reflexive trailing-z transform would have thrown away exactly
+  the level information the clusters use to separate stress years.
+- 139.9M rows → 4,092 daily aggregates in 8.5 min on a laptop once
+  embeddings are out of the loop: the Option-C iteration cycle is minutes,
+  which is what makes the CV-gated embedding decision (assessment §7)
+  actually testable.
+
+### DB mutations this session
+- **Laptop DB**: `daily_text_features` 0 → 4,092 rows (tone-only, embeddings
+  NULL); `daily_topic_prevalence` 0 → 52,524 rows; `cluster_assignments`
+  2 model versions (superseded `phase3_optionC_tone_2024split` + final
+  `phase3_optC_tone_lag1_2024split`); `cluster_centroids` populated; 2 runs
+  registered in `runs`. Headlines untouched.
+- Server DB still untouched/behind (see 2026-07-02 entries).
+
+### Next session
+1. **CV gate for embeddings** (assessment §7): with the Option-C baseline in
+   the harness, wire the cluster→forward-return lift into walk-forward CV and
+   test whether PAGE_TITLE embeddings (2019-09-22+) buy anything over
+   tone+themes before any GPU spend.
+2. **LLM cluster labels**: set ANTHROPIC_API_KEY and run the label stage on
+   the final model (now title-fed).
+3. Server sync decision still open (copy 54 GB file vs re-pull).
