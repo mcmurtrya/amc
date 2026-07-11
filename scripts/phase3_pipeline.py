@@ -422,7 +422,7 @@ _LABEL_HEADLINES_PER_DAY = 50
 
 
 def run_label(
-    model_version: str, target_metal: str = "gold", llm_model: str = "claude-haiku-4-5-20251001"
+    model_version: str, target_metal: str = "gold", llm_model: str = "claude-opus-4-8"
 ) -> None:
     """Phase 3 step 3.12 / 3.14 LLM labelling stage. Gated on ANTHROPIC_API_KEY."""
     _print_stage("label")
@@ -543,7 +543,7 @@ def main() -> None:
     )
     parser.add_argument(
         "--llm-model",
-        default="claude-haiku-4-5-20251001",
+        default="claude-opus-4-8",
         help="Anthropic model id for the label stage.",
     )
     args = parser.parse_args()

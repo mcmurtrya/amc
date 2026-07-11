@@ -1186,3 +1186,44 @@ the full 2015+ corpus backfilled earlier today. Laptop session, no GPU.
 2. **LLM cluster labels**: set ANTHROPIC_API_KEY and run the label stage on
    the final model (now title-fed).
 3. Server sync decision still open (copy 54 GB file vs re-pull).
+
+---
+
+## 2026-07-11 — LLM cluster labels landed (Opus 4.8, both model versions)
+
+### What happened
+- Set up `ANTHROPIC_API_KEY` (documented in `.env.example`), added the
+  missing `anthropic>=0.60` dependency to pyproject (the label stage would
+  have ImportError'd — the SDK was never declared), and flipped the label
+  stage default from Haiku 4.5 to **Opus 4.8** (`cluster_labeling.py`,
+  `phase3_pipeline.py`).
+- Corrected the stale cost docstring in `cluster_labeling.py`: measured
+  reality is ~1,350 input / ~95 output tokens per cluster, not the
+  ~$0.50–15/run the old comment claimed. Actual: **$0.13 for 14 clusters**
+  across both model versions on Opus 4.8.
+- Ran the label stage on both `cluster_assignments` model versions via a
+  budget-guarded runner ($1.00 hard cap, worst-case pre-check per call;
+  never approached). Labels upserted into `cluster_centroids`.
+
+### Labels
+- `phase3_optionC_tone_2024split`: mostly low-confidence —
+  2× `unclear`, 3× diffuse-macro-noise variants,
+  `covid-crash-recovery-rebound` (medium), `summer-2019-gold-rally` (low).
+- `phase3_optC_tone_lag1_2024split` (the final/lagged version): more
+  distinct — `trade-war-dovish-fed-tailwind` (**high**),
+  `covid-recovery-stimulus-rebound` (medium),
+  `fed-rate-hike-expectations`, `mixed-newsflow-crude-uptrend` (low),
+  2× `unclear`, 1× diffuse baseline.
+
+### What I learned
+- The honest-confidence prompt design works: Opus marked 9/14 labels
+  low-confidence rather than confabulating themes for the big
+  regime-mixture clusters (up to 681 days) — consistent with the
+  no-per-metal-signal caveat in the GDELT assessment.
+- The lag1 (final) clustering labels noticeably cleaner than the
+  superseded same-day version — weak supporting evidence that the lagged
+  text alignment sharpened the clusters, not just de-leaked them.
+
+### Next session
+1. CV gate for embeddings (unchanged from 2026-07-02 plan).
+2. Server sync decision still open.

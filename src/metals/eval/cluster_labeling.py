@@ -9,14 +9,16 @@ The Anthropic SDK is imported lazily and the client is fully injectable, so
 the prompt builder and response parser are testable without network access.
 The actual API call is a 50-line function with retries.
 
-Costs (approximate; check current rates):
+Costs (measured 2026-07-03 against the live prompts: ~700 input / ~100
+output tokens per cluster, 7 clusters per run):
 
-  Haiku 4.5:  ~$0.50-1 for all 12 labels in one batch
-  Sonnet 4.6: ~$2-5
-  Opus 4.6:   ~$10-15
+  Opus 4.8:  ~$0.04 per run
+  Haiku 4.5: ~$0.01 per run
 
-Default model is Haiku — the labeling task is structured and short-form,
-so the smaller model is the right choice.
+Default model is Opus — at this prompt size the absolute cost difference
+is pennies, and Opus is meaningfully better at the parts that matter here:
+cause-based (not outcome-based) labels and honest "unclear"/low-confidence
+calls on regime-mixture clusters.
 """
 
 from __future__ import annotations
@@ -32,7 +34,7 @@ import pandas as pd
 
 from metals.data.db import connection
 
-DEFAULT_MODEL = "claude-haiku-4-5-20251001"
+DEFAULT_MODEL = "claude-opus-4-8"
 SYSTEM_PROMPT = """\
 You are labeling clusters of trading days in a precious-metals research project.
 
