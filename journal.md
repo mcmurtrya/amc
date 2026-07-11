@@ -1227,3 +1227,12 @@ the full 2015+ corpus backfilled earlier today. Laptop session, no GPU.
 ### Next session
 1. CV gate for embeddings (unchanged from 2026-07-02 plan).
 2. Server sync decision still open.
+
+### Addendum (same day): local DB backup
+- A6000 Thunder server turned out to be **deleted** (`tnr status`: no
+  instances) — laptop DB was the sole copy of the corpus. Backed up to the
+  Windows side: `C:\amc-backup\metals-2026-07-11.duckdb` (54.4 GB,
+  byte-verified, opens read-only: 139.9M headlines, migrations ✓, 14 LLM
+  labels ✓) + `title_backfill-2026-07-11\` parquets (8.1 GB). Protects
+  against WSL VHDX loss, not laptop loss — GCS Coldline off-site copy
+  (~$0.24/mo in `amc-metals`) discussed and deferred.
