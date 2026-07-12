@@ -10,9 +10,11 @@ phase). Current state: **Phases 0–3 and 5 complete** (2026-07-11), working on 
 Phase 3 closed with a labelled scenario taxonomy and a pre-registered null lift result
 (`results/phase3_writeup.md`); Phase 5 closed with the three-way-triangulated
 hawkish-FOMC finding and the master scenario table
-(`results/phase5_triangulation.md`). Phase 4 (transformer) was re-scoped to a
-numeric-only optional experiment and deliberately deferred; Phase 6 (validation)
-is next.
+(`results/phase5_triangulation.md`). Phase 6's validation core is done
+(`results/phase6_validation.md`: 63-day hold-out, classical baselines beat ML,
+regime/sentiment features hurt OOS); remaining: the 6.8/6.9 long-form methodology +
+findings documents, 6.10 repro entry points, 6.11 cleanup + v1.0 tag. Phase 4
+(transformer) was re-scoped to a numeric-only optional experiment and deferred.
 
 ## Commands
 
