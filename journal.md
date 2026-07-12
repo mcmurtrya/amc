@@ -1281,3 +1281,8 @@ regime refits at split.train_end.
 - Splits 9–10 (2025–2026 test windows) have 2–4× the RMSE of earlier splits
   in every arm — the recent vol regime dominates the mean; the per-split win
   count was the guard against exactly this and it also says no.
+
+### Addendum: Phase 3 write-up
+- Consolidated the phase into results/phase3_writeup.md (corpus, taxonomy,
+  pre-registered null, consequences). Phase 3 considered closed; branch
+  merging to main next.
