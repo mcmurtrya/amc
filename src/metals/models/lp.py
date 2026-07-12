@@ -23,8 +23,8 @@ Notes
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
-from typing import Sequence
 
 import numpy as np
 import pandas as pd
@@ -53,9 +53,7 @@ def cumulative_log_returns(
     """
     if horizon <= 0:
         raise ValueError(f"horizon must be >= 1, got {horizon}")
-    return (
-        returns_1d.rolling(horizon, min_periods=horizon).sum().shift(-horizon)
-    )
+    return returns_1d.rolling(horizon, min_periods=horizon).sum().shift(-horizon)
 
 
 def local_projection(
@@ -110,26 +108,33 @@ def local_projection(
         X = sm.add_constant(X, has_constant="add")
         df = pd.concat([y, X], axis=1).dropna()
         if len(df) < 30:
-            rows.append({
-                "horizon": h, "beta": np.nan, "se": np.nan, "t_stat": np.nan,
-                "ci_low": np.nan, "ci_high": np.nan, "n_obs": len(df),
-            })
+            rows.append(
+                {
+                    "horizon": h,
+                    "beta": np.nan,
+                    "se": np.nan,
+                    "t_stat": np.nan,
+                    "ci_low": np.nan,
+                    "ci_high": np.nan,
+                    "n_obs": len(df),
+                }
+            )
             continue
 
-        res = sm.OLS(df["y"], df.drop(columns="y")).fit(
-            cov_type="HAC", cov_kwds={"maxlags": h}
-        )
+        res = sm.OLS(df["y"], df.drop(columns="y")).fit(cov_type="HAC", cov_kwds={"maxlags": h})
         beta = float(res.params[treatment_name])
         se = float(res.bse[treatment_name])
-        rows.append({
-            "horizon": h,
-            "beta": beta,
-            "se": se,
-            "t_stat": beta / se if se > 0 else float("nan"),
-            "ci_low": beta - z * se,
-            "ci_high": beta + z * se,
-            "n_obs": int(len(df)),
-        })
+        rows.append(
+            {
+                "horizon": h,
+                "beta": beta,
+                "se": se,
+                "t_stat": beta / se if se > 0 else float("nan"),
+                "ci_low": beta - z * se,
+                "ci_high": beta + z * se,
+                "n_obs": int(len(df)),
+            }
+        )
 
     return LPResult(
         irf=pd.DataFrame(rows),

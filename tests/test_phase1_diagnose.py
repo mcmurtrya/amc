@@ -9,22 +9,34 @@ from __future__ import annotations
 
 from scripts.phase1_diagnose import SUBSETS, configurations, feature_subset
 
-
 SAMPLE_COLUMNS = [
     # returns + vol family
-    "GC=F_ret_1d", "GC=F_ret_5d", "SI=F_ret_20d",
-    "GC=F_rvol_20d", "SI=F_skew_20d", "PL=F_kurt_20d", "PA=F_maxdd_60d",
+    "GC=F_ret_1d",
+    "GC=F_ret_5d",
+    "SI=F_ret_20d",
+    "GC=F_rvol_20d",
+    "SI=F_skew_20d",
+    "PL=F_kurt_20d",
+    "PA=F_maxdd_60d",
     # spreads family
-    "Au_Ag_ratio", "Au_Ag_logchg_5d", "Pt_Pd_logchg_1d",
-    "Au_Cu_z_252d", "Au_Oil_logchg_20d",
+    "Au_Ag_ratio",
+    "Au_Ag_logchg_5d",
+    "Pt_Pd_logchg_1d",
+    "Au_Cu_z_252d",
+    "Au_Oil_logchg_20d",
     # macro family
-    "real_yield_10y", "real_yield_chg_5d",
+    "real_yield_10y",
+    "real_yield_chg_5d",
     "breakeven_5y_chg_5d",
-    "dxy_chg_5d", "dxy_pctile_252d",
-    "vix_chg_5d", "vix_pctile_252d",
-    "yield_curve_slope", "yield_curve_slope_chg_5d",
+    "dxy_chg_5d",
+    "dxy_pctile_252d",
+    "vix_chg_5d",
+    "vix_pctile_252d",
+    "yield_curve_slope",
+    "yield_curve_slope_chg_5d",
     "baa_spread_chg_5d",
-    "gpr_chg_5d", "gpr_pctile_252d",
+    "gpr_chg_5d",
+    "gpr_pctile_252d",
 ]
 
 

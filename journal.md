@@ -607,3 +607,682 @@ A running log of work, learnings, surprises, and open questions. Add an entry at
 ### Next session
 
 - You run `--only embed` against the 48.5M-headline corpus. Estimated runtime 3–5 h on a 4090, ~37 GB cache landing in `%LOCALAPPDATA%\metals\embeddings`. Then aggregate → topics → cluster → analyze → label in one evening.
+
+---
+
+## 2026-06-25 (Phase 3 — server verification + streaming/themes redesign)
+
+### Context
+Now on a Linux server (4 cores, 32 GB RAM, RTX A6000 48 GB, CUDA 13). The repo
+was built on Windows + a 4090 + OneDrive. Task: verify training won't break
+here, then fix the Phase 3 pipeline.
+
+### What I did
+- **Verified the environment** (multi-agent workflow). Env builds on Py 3.11,
+  torch 2.12.0+cu130 sees the A6000, GPU matmul + MiniLM encode work, all heavy
+  deps import, OS-portability clean (`db_path`/`resolve_cache_dir` resolve to
+  Linux paths), and Phase 1 LightGBM trains end-to-end (harness runs 34-35).
+- **Migrations**: `005_phase3_artifacts` had never been applied (two files share
+  the `005` prefix; the runner keys idempotency on the full filename stem, so
+  both are tracked independently — phase3_artifacts had simply not run). Applied
+  it; the four Phase 3 tables now exist.
+- **Found three escalating Phase 3 break points and fixed them:**
+  1. *Immediate crash*: `run_embed/aggregate/topics` all `SELECT
+     document_identifier`, a column migration 005 dropped. The live URL column
+     is `article_url`. Fixed 7 refs; added `scripts/phase3_smoke.py` to
+     bind-check stage queries against the live schema (would have caught this
+     before a multi-hour run).
+  2. *OOM*: `embed_texts` materialized the whole 63.3 M-row corpus
+     (`np.vstack` ~97 GB; confirmed adversarially). Added streaming
+     `cache_embeddings()` (no vstack) and rewrote `run_embed`/`run_aggregate`
+     to process one calendar month at a time. Months align to day boundaries,
+     so per-chunk daily aggregates concatenate losslessly (locked by a test).
+  3. *BERTopic intractable* over 63 M docs on 4 cores. Replaced with
+     **themes-via-SQL** (`topics.compute_theme_prevalence`): a streaming DuckDB
+     GROUP BY over the curated GDELT theme set, writing the same
+     `daily_topic_prevalence` table via a stable `theme->topic_id` map. **Ran
+     over the full 63.3 M corpus in 8 s** (30,079 prevalences / 2,315 days /
+     14 themes). BERTopic kept as optional `--topics-method bertopic` (sample-
+     bounded so it can't OOM).
+- **Perf fix**: the hash-sharded embedding cache is slow for bulk sequential
+  reads — 51.7 s for 24k cache *hits* (~4,000 tiny Parquet opens) vs ~9 s to
+  re-encode. So `run_aggregate` now encodes on the fly (`use_cache=False`):
+  faster AND drops the 48 GB disk requirement. The `embed` stage is now optional
+  (pre-warm for bertopic/Phase 4 only).
+- 227 tests pass (+13 new). ruff clean on touched code.
+
+### What I learned
+- Dispersion has a closed form for L2-normalized embeddings: `1 - ||mean(e_i)||`,
+  so it needs only a running sum — fully streamable (aggregate_daily already
+  computes the equivalent).
+- GDELT corpus is **2020-01-01 -> 2026-06-19** only; pre-2020 regime checks
+  (2011 peak, 2013 taper) are out of range for *any* text method.
+- Theme prevalence tracks regimes cleanly (ECON_INFLATION ~0.30 in mid-2022).
+
+### Open / next session
+- Full `aggregate` run is ~9 h single GPU pass (~6.4 h encode @ ~2,753 texts/s +
+  ~2.9 h aggregate_daily). Then context -> cluster -> analyze.
+- `aggregate_daily` uses per-row `iterrows` (~0.17 ms/row); fine, vectorizable.
+- Rename `005_phase3_artifacts` -> `006` to kill the duplicate-prefix fragility.
+- DB mutations this session: applied 005_phase3_artifacts; harness runs 34-35;
+  `daily_topic_prevalence` fully populated (themes); `daily_text_features` holds
+  1 day (2026-05-01) from a smoke (idempotent — a full aggregate overwrites it).
+
+---
+
+## 2026-06-26 (Phase 3 — text-quality audit → GKG headline discovery)
+
+### Context
+Audited how good the URL-slug recovery (`text_prep.url_to_text`) actually is as a
+proxy for article headlines, since the whole text channel rides on it. The audit
+cascaded into a much bigger finding: **GDELT has had the real article titles all
+along, in a GKG column we never ingest.** No code shipped to `src/` yet — this is
+a decision/handoff entry. The plan below is ready to implement.
+
+### What I did
+- **Audited slug recovery, whole-corpus.** Wrote `scripts/phase3_slug_quality.py`
+  (read-only, repeatable `--seed`, `--n`). Uniform 8k-row sample of all 63.3M
+  rows: only **61% recover to headline-like text (6+ tokens)**; **~30% are
+  degenerate (≤2 tokens** — section words `news`/`story`/`item`, or empty); only
+  **27% English-ish**. The earlier curated English-news spot-check (near-perfect)
+  was survivorship-biased. Systematic loss: `clean_slug_text` drops numeric
+  tokens, so prices/percentages/years/quarters are gone from every recovered slug.
+- **Found the theme filter is a no-op.** `text_daily.metals_for_themes` keeps
+  **100%** of rows — the corpus was *ingested* on these exact themes, and
+  `WB_1699_METAL_ORE_MINING` alone tags 57% of GKG, so the union is everything.
+  The daily aggregate genuinely averages over the full, noisy, ~70%-non-English mix.
+- **Tested whether degeneracy is missing-at-random — it is NOT.** Degenerate URLs
+  are overwhelmingly Asian/non-Latin finance portals with numeric-ID paths (`.cn`
+  13.5% of degenerate vs 0.0% of rich; sina/sohu/163/eastmoney; 67% numeric-id
+  paths). Degeneracy correlates with three model regressors: **time** (degen share
+  35.8%→26.1%, 2020→2026), **tone** (degen mean −0.106 vs rich −0.806, Cohen
+  d=+0.19), and **theme mix** (METAL_ORE +17pt, INFLATION −10pt). So a naive
+  min-token filter (drop degenerate rows) would bias tone/theme/count features in
+  a time-varying way — a selection-bias trap.
+- **Assessed "use Haiku to recover headlines" — rejected.** There is no headline
+  text in the DB (the `headline` column was a byte-copy of the URL, dropped in
+  migration 005). For the 67% numeric-ID degenerate URLs there are *no words in
+  the input*, so Haiku would hallucinate, not recover. Cost to run Haiku over 63M
+  URLs ≈ $6–13k for near-zero gain. LLMs belong at the cluster-label scale (already
+  built), not per-row.
+- **Probed two un-ingested GKG columns — the payoff.** Wrote
+  `scripts/phase3_gkg_enrichment_probe.py` (reuses `gdelt.build_query`'s exact
+  theme+date predicate; always free-dry-runs first). Pulled `Extras` and
+  `TranslationInfo` for a 3-day themed sample (67k rows, 1.4 GB scan, free):
+  - **`Extras` contains `<PAGE_TITLE>` on 99.6% of rows** — the real scraped
+    article title. **99.1% of the degenerate-slug rows are rescued** by it.
+  - Titles are HTML-entity-encoded; `html.unescape` decodes cleanly to native
+    Unicode (verified: Serbian/Latvian/Finnish/Persian).
+  - **`TranslationInfo` gives a free per-row source-language code** (empty =
+    English-original). Confirms corpus is **29.6% English**, ~70% native-language;
+    PAGE_TITLE is in the *original* language.
+
+### What I learned
+- **The real headlines were one un-pulled GKG column away the whole time.**
+  `gdelt.build_query` selects only 5 of ~27 GKG columns; `Extras` (the XML blob)
+  carries `<PAGE_TITLE>` near-universally. This **supersedes slug recovery** and
+  **dissolves** the degeneracy + missing-at-random + feature-gating problems: the
+  embedding becomes defined for ~100% of rows, so there's no non-random
+  "text-bearing" subset left to bias anything.
+- With real native-language titles in hand, a **multilingual encoder is now clearly
+  worth it** (genuine foreign headlines to embed, not garbage slugs) — and
+  `TranslationInfo` is the clean language label for routing/filtering.
+- Other un-ingested GKG fields worth a later look: `GCAM` (2,300 content dims vs
+  our 6 tone components), `Quotations` (real extracted sentences), `Amounts`
+  (recovers the numbers slug recovery drops).
+
+### Environment / housekeeping this session
+- **Fixed `.env`**: `GOOGLE_APPLICATION_CREDENTIALS` was a stale Windows path
+  (`~\.gcp\gdelt-reader.json`); rewrote to the Linux absolute path
+  `/home/mcmur/.gcp/gdelt-reader.json`. BigQuery dry-run + execute both work now.
+- **No DuckDB mutations** this session. The probe is read-only BQ; nothing written
+  to `headlines` or any table. New files: `scripts/phase3_slug_quality.py`,
+  `scripts/phase3_gkg_enrichment_probe.py` (both standalone, no `src/` changes).
+
+### Next session — implement the PAGE_TITLE plan (ready to go)
+1. **Add two columns to the GKG ingest** (`src/metals/data/gdelt.py`):
+   - `build_query`: also select `Extras`, `TranslationInfo`.
+   - `parse_gkg_rows`: derive `page_title = html.unescape(<PAGE_TITLE> regex from
+     Extras)` and `src_lang` (from `TranslationInfo`; empty → `eng`). The probe
+     script already has the exact regexes (`_PAGE_TITLE_RE`, `_SRCLC_RE`).
+   - New migration `006_*` adding `page_title VARCHAR`, `src_lang VARCHAR` to
+     `headlines`; extend the upsert column lists in `gdelt.upsert_headlines`.
+     (Also: rename the duplicate-prefix `005_phase3_artifacts` → `006` while here,
+     per the 2026-06-25 note — pick distinct numbers.)
+2. **Backfill** `Extras`+`TranslationInfo` over 2020-01→2026-06 to populate the new
+   columns. Cost ≈ 1.4 GB / 3 days → **~1.1 TB total scan ≈ $0 if chunked across
+   two billing months** (~$7 at full on-demand). Can reuse `backfill_gdelt.py`'s
+   chunking; needs a column-update path (rows already exist — update, don't insert).
+3. **Switch the embedding input** in `text_daily`/the pipeline from
+   `text_prep.url_to_text(url)` → `html.unescape(page_title)`, with slug recovery
+   kept only as the <0.4% fallback. The degeneracy/gating/MNAR work then becomes a
+   tiny safety net for the residual empties, not a bias mitigation.
+4. **Adopt the multilingual encoder** in `features/embeddings.py`:
+   `paraphrase-multilingual-MiniLM-L12-v2` (384-dim — drop-in, no BLOB/PCA/cache
+   schema change; ~2× slower encode). Re-warm/rebuild the embedding cache.
+5. Keep `phase3_slug_quality.py` + `url_to_text` as fallback/diagnostic. Re-run the
+   slug audit's `[D]` cross-tab against the new `page_title` column to confirm
+   coverage on the full corpus before deleting any slug path.
+
+### Watch-outs for the next agent
+- `Extras` is a fat XML column — the dry-run scan is wider than the 5-narrow-column
+  monthly pull. Always `--dry-run` (the probe does this by default) and check GB
+  before a full `--execute`. Stay under 1 TB/month to keep it free.
+- PAGE_TITLE is native-language + entity-encoded → `html.unescape` is mandatory
+  before embedding; don't embed raw `&#x...;` strings.
+- `TranslationInfo` is populated only for GDELT-translated (non-English-source)
+  docs, so empty ≠ missing — empty means English-original. Map empty → `eng`.
+- This is a schema change + full re-backfill (bigger commit). The probe proved the
+  premise (99.6% coverage); the user OK'd the direction but hadn't green-lit the
+  backfill itself — confirm scope before kicking off the multi-hour pull.
+
+---
+
+## 2026-06-26 (later — Phase 3 correctness foundation + ruff adoption)
+
+### Context
+New agent onboarding: read the whole journal + roadmap + GDELT assessment, then
+mapped every subsystem against the actual source (5-way parallel read) to ground
+the model and catch doc-vs-code drift. Agreed plan with the user: **correctness
+before compute** — land the in-flight collapse, fix the one real leak, ship a
+defensible clustering baseline on the signals we trust (themes + tone), and gate
+the expensive PAGE_TITLE/embedding work on a measured CV win. User decided:
+**extend coverage to 2015** and do the **migration-006 schema work first** so the
+2015–2019 backfill can be pulled *wide* (titles for free, no re-scan).
+
+### What I did
+- **Committed the in-flight work** in clean units: the per-metal text-axis
+  **collapse** to a shared `market` row (code + tests + assessment §7), and the
+  untracked **Docker/CUDA env + CLAUDE.md + the two audit scripts**.
+- **Fixed a real look-ahead leak in `context.build_context`.** The text-embedding
+  whitening PCA was `fit_transform`-ed on the *entire* date range, so `text_pca_*`
+  leaked future covariance into past coordinates — and (unlike Phase-1
+  `assemble`) the function ran no leakage guard. Added a `pca_fit_until` boundary
+  (`_pca_fit_transform`: fit on rows ≤ boundary, transform the full series),
+  threaded `--train-until` into `run_context`, and added an `assert_chronological`
+  guard. Regression test proves changing post-boundary embeddings cannot move
+  train-window `text_pca` coords; the full-sample fit is asserted to leak as a
+  control.
+- **Tidied the pipeline** in the same pass: run `analyze` before `label` (matched
+  `STAGES`; they were inverted in `main()`); bounded `run_label`'s headline pull
+  to the assignment date range with a per-day cap (was materializing the whole
+  ~63 M-row corpus); dropped the always-`None` `date_range` print; deduped the
+  `model_version` fallback. Corrected `leakage.py`'s docstring (it advertised a
+  nonexistent `check_no_lookahead`).
+- **Adopted ruff as the project standard** (user call). The repo was neither
+  `ruff format`-clean nor `ruff check`-clean tree-wide (93 check errors at HEAD).
+  Three isolated commits: `ruff format` repo-wide (mechanical), then a check-clean
+  pass (safe autofixes; `strict=False` on 8 bare `zip`s; `raise … from None`;
+  wrapped 4 long lines; **ignore N803/N806** since capitalised math-notation vars
+  `X`/`E`/`Z`/`X_std`/… are idiomatic here), and a `.git-blame-ignore-revs` for the
+  two bulk commits. CLAUDE.md now states both are enforced.
+- **229 tests pass** (+1 leak regression); `ruff check` + `ruff format --check`
+  both clean.
+
+### What I learned
+- The leak was structural, not a typo: the PCA fit lived upstream of the
+  clustering train/test split, so the split couldn't protect it. Fixing it needed
+  the train boundary pushed *into* `build_context`, not just into `run_cluster`.
+- `context.build_context` carries **no tone** today — only `n_articles`,
+  `embedding_dispersion`, and `text_pca_*`. The signals the assessment trusts most
+  (V2Tone, 100% coverage) aren't in the clustering vector yet. The Option-C
+  baseline should *add* tone while dropping the weak URL embeddings, not just
+  remove things.
+- `ruff format` is safe to bulk-adopt (it reduced check errors 93→75, introduced
+  none); the only judgment call was N803/N806, correctly resolved by ignoring them
+  for math code rather than renaming.
+
+### Open / next session
+1. **Migration 006/007 + wide GKG ingest** (the data no-regret, do before the pull):
+   add `page_title` + `src_lang` columns; `gdelt.build_query` to also select
+   `Extras`/`TranslationInfo`; `parse_gkg_rows` to derive them (regexes already in
+   `phase3_gkg_enrichment_probe.py`); extend `upsert_headlines`; rename
+   `005_phase3_artifacts` → `006` to kill the duplicate prefix; new `007` for the
+   columns. Tests for the parse. Then backfill **2015–2019 wide** (titles free for
+   that range); a later UPDATE-backfill adds titles to existing 2020–2026 rows.
+2. **Option C clustering**: add a `ContextConfig.include_embeddings` flag, *add
+   tone* to the context vector, drop `text_pca`/dispersion when off. Run
+   `aggregate` (embeddings-free, fast) → `context` → `cluster` → `analyze` and
+   sanity-check the 2020/2022/2023 regimes. Cheap, leak-free, defensible.
+3. **Then** gate the multilingual PAGE_TITLE re-embed on the §7 CV bar.
+- DB untouched this session (code + tests + git only; no pulls, no GPU).
+
+---
+
+## 2026-07-02 (Phase 3 — migration 006/007 + wide GKG ingest)
+
+### Context
+Step 1 of the agreed "correctness before compute" sequencing: land the schema +
+ingest code so the 2015–2019 backfill can be pulled *wide* (titles for free).
+Session ran on **AYMStation (WSL2 laptop, RTX A1000)** — NOT the A6000 server.
+Important discovery: the two machines' DuckDB files had **diverged** (git syncs
+code, not data): this laptop's DB was missing `005_phase3_artifacts` and the
+four Phase 3 tables until today, while the server has them populated.
+
+### What I did
+- **Renamed `005_phase3_artifacts.sql` → `006_phase3_artifacts.sql`** (kills the
+  duplicate-005 prefix). Safe on every live DB state because the file is fully
+  `IF NOT EXISTS`: the server (applied under the old stem) re-runs it as a
+  no-op and keeps a stale tracking row; fresh/laptop DBs apply it normally.
+  Locked by `tests/test_migrations_runner.py` simulating all three states.
+- **New `007_headlines_page_title.sql`**: `page_title VARCHAR`, `src_lang
+  VARCHAR` on `headlines` (`ADD COLUMN IF NOT EXISTS` works on duckdb 1.5.3
+  with the index present).
+- **Widened the ingest** (`metals/data/gdelt.py`): `build_query` also selects
+  `Extras` + `TranslationInfo`; new pure extractors `extract_page_title`
+  (html.unescape once, collapse whitespace, 512-char cap, absent → None) and
+  `extract_src_lang` (empty → `'eng'`, `srclc:xx` → code, malformed → None);
+  `parse_gkg_rows` derives both and tolerates narrow (pre-007) frames by
+  landing NULLs; `upsert_headlines` upserts them with **COALESCE on conflict**
+  so a narrow re-pull can never clobber landed titles. Semantics rule:
+  **NULL `src_lang` = "not pulled wide", never English.**
+  `phase3_gkg_enrichment_probe.py` now imports the extractors (no regex drift).
+- **BigQuery dry-run estimates** (per convention, bytes + cost): backfill
+  2015-02-18→2019-12-31 **wide = 1.352 TB** ($8.45 on-demand full price; $0 if
+  split across 2 billing months; ~$2.20 in one month). Narrow same range =
+  1.125 TB → the wide increment is only **0.227 TB (~20%, $1.42)** — pulling
+  titles with the backfill is confirmed near-free vs a later 1.15 TB re-scan.
+  Title UPDATE-backfill 2020-01→2026-06-19 = **1.154 TB** ($7.21 / $0 across
+  2 months). Heaviest year: 2016 at 0.347 TB wide. NB the assessment's ~0.5 TB
+  backfill estimate was ~2.4× optimistic.
+- **Live landing verification** (one-day pull 2024-06-01, 0.41 GiB, through
+  the real build_query→BQ→parse→upsert path into a throwaway DB): schema match
+  exact; 18,633 rows; **99.53% title coverage; 0 undecoded entities; 27.1%
+  English** (assessment said ~30%); **100.000% headline_id match** against the
+  live 63.3M-row table (ON CONFLICT hits existing PKs — the future title
+  backfill can use the plain upsert); COALESCE guard held under a simulated
+  narrow re-pull; 1 intra-batch PK collision (pre-existing last-write-wins
+  dedup semantics, headline_id = ts + url[:200]).
+- **Adversarial review (3 lenses + verification agents)** confirmed one major:
+  with migration 007 absent from a checkout (e.g. forgotten `git add`),
+  `compact_headlines.py` would rebuild the canonical schema without the new
+  columns and its column-intersection copy would **silently discard populated
+  titles while row-count verification passes**. Fixed two layers: all files
+  explicitly tracked in the commit, and `compact_headlines.py` now **refuses
+  to drop source columns** missing from the canonical schema unless
+  `--allow-column-drop` is passed (guard verified live both ways). Also
+  future-proofed the runner tests against a future 008 migration.
+- CLAUDE.md sharp edges rewritten (005-conflict resolved → stem-tracking note,
+  page_title/src_lang facts, NULL-src_lang rule). 241 tests pass (+12), ruff
+  check/format clean, mypy at HEAD parity (41 pre-existing stub errors).
+
+### What I learned
+- `compact_headlines`-style "rebuild schema from the migration glob, copy
+  intersecting columns" passes row-count verification while losing columns —
+  a failure class invisible to working-tree tests (the untracked file exists
+  locally). Guard in the tool, not just the process.
+- Wide-vs-narrow GKG scan is only ~+20% bytes: `V2Themes` (in the WHERE) is
+  the fat column, so `Extras` rides along cheaply.
+- The title UPDATE-backfill may not need a dedicated column-update path at
+  all: the plain wide `refresh()` upsert updates titles on conflict, and its
+  extra scan cost over a minimal 4-column query is just V2Tone +
+  SourceCommonName. Measure both dry-runs before building anything.
+
+### DB mutations this session
+- **Laptop DB only**: applied `006_phase3_artifacts` + `007_headlines_page_title`
+  (Phase 3 tables now exist here, empty; `headlines` gained two NULL columns).
+- **Server DB untouched** — run `uv run python -m metals.data.migrations.runner`
+  there BEFORE any ingest: `upsert_headlines` now requires 007 and fails with a
+  Binder error on a pre-007 DB.
+- Real `headlines` data untouched on both machines. The verification pull
+  landed only in a deleted throwaway DB — deliberately, so `backfill_gdelt.py`
+  month-gap detection stays clean (a stray 2015 sliver would mask a whole
+  month from the backfill).
+- BigQuery spend: ~0.8 GiB scanned (2× one-day pulls; dry-runs are free) —
+  negligible against the 1 TB/month free tier.
+
+### Next session
+1. **Decide + run the 2015–2019 wide backfill** (user green-light + machine
+   choice pending): target the *server* DB presumably (it's the compute box);
+   split across the Jul/Aug billing boundary for $0 or accept ~$2.20 in one
+   go. `backfill_gdelt.py` already pulls wide via the shared `build_query`;
+   its default `--max-gb 100` per chunk is comfortably above the ~30 GB/month
+   wide scan. Remember: migrations on the server first.
+2. **Title UPDATE-backfill 2020–2026** (1.154 TB, $0 across 2 months): compare
+   dry-runs of plain wide `refresh()` vs a minimal 4-column pull before
+   deciding whether any new code is even needed.
+3. **Option C clustering baseline** (unchanged): `include_embeddings` flag,
+   add tone to the context vector, aggregate→context→cluster→analyze, regime
+   sanity checks.
+
+---
+
+## 2026-07-02 (later — crash recovery: 2015–2019 backfill landed)
+
+### Context
+The machine overheated and restarted mid-way through the 2015–2019 wide
+backfill (it launched right after the 11:52 commit and died ~13:08). Session
+goal: diagnose, resume safely, land the whole thing. AYMStation again — all
+backfill data lives in the **laptop** DB; the server still has none of it.
+
+### What I did
+- **Forensics**: BigQuery job history showed all 55 chunk queries `DONE` — the
+  machine died *between* chunks and DuckDB closed clean (no WAL). Landed data
+  stopped at 2016-11-21, mid-November: exactly the case where the
+  month-granularity gap detection in `backfill_gdelt.py` would have resumed at
+  December and silently left Nov 22–30 empty forever.
+- **Fixed gap detection to day granularity** (`present_days` / day-level
+  `gap_ranges`). Exact by construction: chunk upserts are atomic and
+  day-aligned, so a day with rows is a complete day. Regression test encodes
+  the crash (present through 11-21 → gap must start at 11-22).
+- **Resumed the pull** (~0.86 TB remaining). The resumed process was
+  **OOM-killed** at ~15.3 GB RSS after ~70 chunks (`dmesg` oom-kill; the WSL2
+  VM has 15 GB): memory accumulates across chunks in the BQ→pandas path and
+  never returns to the OS. DuckDB rolled back cleanly — zero damage. NB: OOM
+  is a plausible contributor to the original "overheat" crash too.
+- **Restarted as a month-windowed driver** — one fresh process per calendar
+  month, 16 windows, each idempotent thanks to day-level gaps. All 16
+  completed without incident (~1 chunk/min, ~3–5 GB RSS steady).
+- **Verified**: coverage **2015-02-18 → 2026-06-19, day-continuous**, 139.9M
+  rows (was 63.3M). Exactly one hole: **2017-08-29 is empty upstream in GDELT
+  itself** (a re-pull returns 0 rows; neighbouring days depressed too — left
+  as documented). `src_lang` 100% on backfilled rows, 32.4% English.
+- **PAGE_TITLE has a hard onset: 2019-09-22.** Coarse-probed via
+  `COUNTIF(Extras LIKE '%<PAGE_TITLE>%')` over a 2017–2019 day grid, then
+  confirmed in landed rows: 0% through 09-21, 37% on the switch-on day
+  (14:30 UTC), ~99.2% steady after. So "titles for free" held only for the
+  last ~3.3 months of the backfill (~3.1M titled rows); **2015→2019-09-21 can
+  never get titles from GKG** — the DOC 2.0 API remains the only title source
+  there. Corrected the assessment (§2 → resolved, §3 correction block), the
+  `gdelt.py` docstring (~99.6% claim), and the CLAUDE.md sharp edge.
+- **Title UPDATE-backfill 2020–2026 needs no new code**: dry-runs put plain
+  wide `refresh()` at 1.233 TB vs a minimal 4-column variant at 1.154 TB —
+  $0.49 apart, because V2Themes is scanned by the WHERE clause either way.
+
+### What I learned
+- Day-granular gap detection paid for itself twice in one session: the crash
+  resume (9 days would have vanished silently) and surfacing the 2017-08-29
+  upstream hole that month granularity structurally cannot see.
+- Long BigQuery→pandas→DuckDB pulls on this box must run one process per
+  window: RSS grows ~200 MB/chunk regardless of chunk size, so the OOM
+  killer — not thermals — is the binding constraint. The driver-loop pattern
+  (fresh process per month, script skips present days) is now the standard.
+- Never open the DuckDB file (even read-only) while a backfill is writing:
+  single-writer locking means a stray reader can kill the writer's next
+  connect. Verify only between runs.
+
+### DB mutations this session
+- **Laptop DB only**: `headlines` 63.3M → 139.9M rows (this session pulled
+  2016-11-22 → 2019-12-31 wide; the pre-crash run had landed 2015-02-18 →
+  2016-11-21). File 35 → 51.4 GB (disk fine: 769 GB free).
+- **Server DB untouched** — still 2020+, narrow, pre-007. Migrations first,
+  then either re-run the backfill there (~1.35 TB again) or copy the file.
+- BigQuery July total: **1.373 TB billed → $2.33** past the free tier
+  (projection was $2.39).
+
+### Next session
+1. **Option C clustering baseline** (unchanged, now unblocked on 2015+ data):
+   `ContextConfig.include_embeddings` flag, add tone to the context vector,
+   aggregate→context→cluster→analyze; regime sanity checks can now include
+   the 2015–16 commodity bust and 2018 trade war.
+2. **Title UPDATE-backfill 2020–2026** via plain `refresh()` after Aug 1
+   ($0 across the billing boundary; ~1.23 TB).
+3. Decide the server-DB sync path (re-pull vs copy the 51 GB file) before any
+   server-side Phase 3 compute.
+
+---
+
+## 2026-07-02 (evening — 2020–2026 title backfill: the fast way, after the slow way)
+
+### Context
+User call: finish the title UPDATE-backfill now, in July, at the quoted
+~$7.71 rather than waiting for August's free tier. What was supposed to be
+"plain `refresh()`, no new code" turned into a redesign — and a much better
+tool.
+
+### What I did
+- **Started the naive path** (`refresh()` per month window, the OOM-safe
+  driver pattern) and watched it crawl: ~10 min per 10-day chunk vs ~60 s in
+  the afternoon. Diagnosis: this workload *updates* every row (all PKs exist),
+  and DuckDB's per-row `ON CONFLICT DO UPDATE` through the 140M-row ART PK
+  index is the bottleneck — a 30–40 h job. Killed it after chunk 3 of 236
+  (the applied updates are idempotent, no cleanup needed). A second, additive
+  problem: title-era `Extras` blobs (PAGE_LINKS etc.) made even the pure pull
+  ~8.5 min/month.
+- **Two-phase replacement** (`scripts/backfill_titles.py`, promoted from
+  scratchpad with tests):
+  1. `pull` — extract PAGE_TITLE **inside BigQuery** (`REGEXP_EXTRACT` on
+     Extras) so the download is ~100-byte strings, not multi-KB blobs. Same
+     scan billing (columns scanned, not bytes downloaded), ~5× faster wall
+     clock. Wrote per-chunk parquet, atomic + skip-if-exists (crash-resume
+     for free), **zero DuckDB contact** (no writer-lock hazard). Client-side
+     normalisation reuses `extract_src_lang` and replicates
+     `extract_page_title`'s post-regex steps; **parity-verified: 0 mismatches
+     on 323K live rows** against the python-extracted January parquet.
+  2. `apply` — yearly bulk `UPDATE … FROM read_parquet(...)` (hash join, PK
+     index untouched). Pilot: 907K rows in **0.77 s**.
+- **Ran it**: 77 month-window processes pulled 2020-02 → 2026-06-19 in
+  ~98 min (~50–75 s/month); apply updated **63,266,028 rows in 31 s** total.
+  End-to-end ~1.7 h vs the 30–40 h naive path (~1000× on the update step).
+- **Verified**: 2020–2026 titled 99.3–99.6% per year, `src_lang` ~100%
+  everywhere; 2019 at 24.7% titled = exactly the 2019-09-22-onset fraction of
+  the year; 2015–2018 correctly 0% titled / 100% lang. Sample titles are real
+  headlines. ~99.99% of parquet rows matched existing PKs.
+- Docs: CLAUDE.md sharp edge rewritten (title state, the parquet artifact,
+  "never conflict-update a big indexed table" rule); assessment §3 correction
+  block updated to "ran the same evening" with the method + numbers.
+
+### What I learned
+- **Upsert ≠ update.** The identical `ON CONFLICT` upsert that ingests fresh
+  rows at ~60 s/chunk collapses to ~10 min/chunk when every row conflicts.
+  For column fills on existing rows: pull to parquet, then bulk
+  `UPDATE … FROM` — 63M rows in 31 s.
+- **Push extraction into BigQuery when the raw column is fat.** Billing is
+  per column *scanned* either way; downloading the regex group instead of
+  `Extras` cut transfer ~5× and memory to trivial.
+- The per-chunk parquet directory doubles as a **portable artifact**: the
+  server gets identical titles in ~30 s (`backfill_titles.py apply`) with $0
+  BigQuery spend. Worth keeping `data/raw/title_backfill/` (7.6 GB) around
+  until the server is synced.
+
+### DB mutations this session
+- **Laptop DB only**: `page_title`/`src_lang` filled on all 63.27M 2020+
+  rows (plus the 907K 2020-01 rows via the pilot). Row count unchanged
+  (139.9M). File 51.7 → 54.4 GB (update row-group rewrites); disk fine
+  (758 GB free), compaction skipped as unnecessary.
+- `data/raw/title_backfill/`: 81 parquet files, 7.6 GB (gitignored), keep for
+  the server sync.
+- **BigQuery July 2026 final: 2.533 TB billed → $9.58** past the free tier
+  ($2.33 for the 2015–2019 backfill, ~$7.25 for the title pull — under the
+  $7.71 quote since the fast query skips V2Tone/SourceCommonName).
+
+### Next session
+1. **Option C clustering baseline** (unchanged; text signals now maximal:
+   tone+themes 2015+, titles 2019-09-22+, languages everywhere).
+2. **Server DB sync**: migrations runner, then either copy the 54 GB DuckDB
+   file, or re-run the 2015–2019 backfill (~$8.45 or split months) + apply
+   the title parquet. Decide before server-side Phase 3 compute.
+3. Forward-fill note: corpus still ends 2026-06-19; next `refresh()` pull of
+   recent weeks lands wide (titles included) by default.
+
+---
+
+## 2026-07-03 (Option C clustering baseline — landed)
+
+### Context
+The long-queued Option C: a defensible, embeddings-free scenario clustering
+on the signals the GDELT assessment trusts (tone + themes), now running on
+the full 2015+ corpus backfilled earlier today. Laptop session, no GPU.
+
+### What I did
+- **`ContextConfig.include_embeddings` flag** (default True = old behaviour):
+  off drops `text_pca_*`/`embedding_dispersion`; the V2Tone daily means
+  (`mean_tone_overall/positive/negative`) now always join the context vector.
+  `--no-text-embeddings` threads it end-to-end: `aggregate` runs tone-only
+  (no torch import, no GPU), `embed` is skipped, `context` sets the flag.
+  `run_cluster` now **registers every fit with the eval harness** (config,
+  train range, feature names, git hash); the `label` stage feeds the LLM
+  `COALESCE(page_title, article_url)` — real titles where they exist.
+- **Aggregate + topics on the laptop**: 139,904,911 headlines → 4,092 daily
+  `market` rows (8.5 min) + 52,524 topic-prevalence rows (seconds). Tone
+  face-validity on famous days: COVID crash Monday 2020-03-16 the most
+  negative (-1.76), 2018-06-19 trade-war escalation -0.96, Brexit -0.79.
+- **Adversarial review before committing** (31-agent workflow: 3 lenses ×
+  2 refuters per finding): 14 raw findings, **3 confirmed** (all minor),
+  11 refuted. Fixed all three:
+  1. *Same-day text vs forward returns* (inherited by every text feature,
+     newly load-bearing through tone): daily text aggregates span the full
+     UTC day incl. post-close hours, violating "a day's text must strictly
+     precede the forward returns it predicts". Fix at the input layer —
+     **all text-derived context features (tone, counts, topics, embeddings)
+     now join lagged one trading day**; day-t price features stay as-of the
+     close. Regression test pins the lag.
+  2. *Tone-only re-runs NULLing embedding aggregates*: `upsert_daily` now
+     COALESCEs the embedding columns (and lands NaN dispersion as SQL NULL
+     so the guard is real) — same pattern as the headlines title upsert.
+  3. *Nonstationary tone levels under train-anchored z-scores*: measured
+     before acting — OOS (2024+) tone shift is +0.83σ but the yearly path
+     tracks true stress years (2022 -0.97, 2020 -0.85, calm 2024 -0.30),
+     i.e. mostly signal, not corpus drift; and the feared OOS noise-dump
+     did not occur (2024 assigns 87% to an existing cluster at normal
+     confidence). Kept levels; documented here.
+- **Final model `phase3_optC_tone_lag1_2024split`** (harness run
+  cb2e33a7…): 39 features, 2,148 train rows 2015-02-19 → 2023-12-29,
+  assignments through 2026-06-19 (2024+ strictly OOS via
+  `approximate_predict`), 7 clusters + 4.7% noise, mean confidence 0.86.
+- **Regime sanity — all five targets recovered**:
+  | regime | dominant cluster |
+  |---|---|
+  | 2015–16 commodity bust | 0 (69%; pure-2015 cluster) |
+  | Brexit window | 2 (100%; 2016–17 regime) |
+  | 2018 trade war | 6 (98%) |
+  | 2020 COVID crash | 4 (48%, an 84%-2020 cluster) + 44% noise on the crash weeks |
+  | 2022 inflation shock | 1 (99%) |
+  | 2023 banking stress | 1 (100%; same high-rates regime) |
+  OOS 2024 → 87% cluster 1 (regime continuation); OOS 2025–26 fragments
+  (25% c6 / 24% c3 / 24% noise) — the record gold bull reads as genuinely
+  novel rather than force-fitted, which is the honest behaviour.
+- **Forward-return separation (gold, 20d, descriptive)**: bust cluster 0 is
+  the only negative regime (-0.9%, 40% hit); easing-2019 cluster 5 the
+  strongest bull (+4.1%, 86% hit); COVID cluster 4 +2.9% (73%). Not a
+  trading claim — analyze-stage description, now free of same-day text
+  leakage after the lag fix.
+
+### What I learned
+- The adversarial-review pattern earns its cost: the same-day-text finding
+  was invisible to tests (alignment is a convention, not a crash) and the
+  cheap fix landed *before* the baseline's numbers went anywhere.
+- Measure before stationarizing: the "drift" in tone is mostly regime
+  signal; a reflexive trailing-z transform would have thrown away exactly
+  the level information the clusters use to separate stress years.
+- 139.9M rows → 4,092 daily aggregates in 8.5 min on a laptop once
+  embeddings are out of the loop: the Option-C iteration cycle is minutes,
+  which is what makes the CV-gated embedding decision (assessment §7)
+  actually testable.
+
+### DB mutations this session
+- **Laptop DB**: `daily_text_features` 0 → 4,092 rows (tone-only, embeddings
+  NULL); `daily_topic_prevalence` 0 → 52,524 rows; `cluster_assignments`
+  2 model versions (superseded `phase3_optionC_tone_2024split` + final
+  `phase3_optC_tone_lag1_2024split`); `cluster_centroids` populated; 2 runs
+  registered in `runs`. Headlines untouched.
+- Server DB still untouched/behind (see 2026-07-02 entries).
+
+### Next session
+1. **CV gate for embeddings** (assessment §7): with the Option-C baseline in
+   the harness, wire the cluster→forward-return lift into walk-forward CV and
+   test whether PAGE_TITLE embeddings (2019-09-22+) buy anything over
+   tone+themes before any GPU spend.
+2. **LLM cluster labels**: set ANTHROPIC_API_KEY and run the label stage on
+   the final model (now title-fed).
+3. Server sync decision still open (copy 54 GB file vs re-pull).
+
+---
+
+## 2026-07-11 — LLM cluster labels landed (Opus 4.8, both model versions)
+
+### What happened
+- Set up `ANTHROPIC_API_KEY` (documented in `.env.example`), added the
+  missing `anthropic>=0.60` dependency to pyproject (the label stage would
+  have ImportError'd — the SDK was never declared), and flipped the label
+  stage default from Haiku 4.5 to **Opus 4.8** (`cluster_labeling.py`,
+  `phase3_pipeline.py`).
+- Corrected the stale cost docstring in `cluster_labeling.py`: measured
+  reality is ~1,350 input / ~95 output tokens per cluster, not the
+  ~$0.50–15/run the old comment claimed. Actual: **$0.13 for 14 clusters**
+  across both model versions on Opus 4.8.
+- Ran the label stage on both `cluster_assignments` model versions via a
+  budget-guarded runner ($1.00 hard cap, worst-case pre-check per call;
+  never approached). Labels upserted into `cluster_centroids`.
+
+### Labels
+- `phase3_optionC_tone_2024split`: mostly low-confidence —
+  2× `unclear`, 3× diffuse-macro-noise variants,
+  `covid-crash-recovery-rebound` (medium), `summer-2019-gold-rally` (low).
+- `phase3_optC_tone_lag1_2024split` (the final/lagged version): more
+  distinct — `trade-war-dovish-fed-tailwind` (**high**),
+  `covid-recovery-stimulus-rebound` (medium),
+  `fed-rate-hike-expectations`, `mixed-newsflow-crude-uptrend` (low),
+  2× `unclear`, 1× diffuse baseline.
+
+### What I learned
+- The honest-confidence prompt design works: Opus marked 9/14 labels
+  low-confidence rather than confabulating themes for the big
+  regime-mixture clusters (up to 681 days) — consistent with the
+  no-per-metal-signal caveat in the GDELT assessment.
+- The lag1 (final) clustering labels noticeably cleaner than the
+  superseded same-day version — weak supporting evidence that the lagged
+  text alignment sharpened the clusters, not just de-leaked them.
+
+### Next session
+1. CV gate for embeddings (unchanged from 2026-07-02 plan).
+2. Server sync decision still open.
+
+### Addendum (same day): local DB backup
+- A6000 Thunder server turned out to be **deleted** (`tnr status`: no
+  instances) — laptop DB was the sole copy of the corpus. Backed up to the
+  Windows side: `C:\amc-backup\metals-2026-07-11.duckdb` (54.4 GB,
+  byte-verified, opens read-only: 139.9M headlines, migrations ✓, 14 LLM
+  labels ✓) + `title_backfill-2026-07-11\` parquets (8.1 GB). Protects
+  against WSL VHDX loss, not laptop loss — GCS Coldline off-site copy
+  (~$0.24/mo in `amc-metals`) discussed and deferred.
+
+---
+
+## 2026-07-11 (2) — Cluster→forward-vol lift experiment: gate readout
+
+Ran the pre-registered A/B experiment (results/phase3_cluster_lift_design.md,
+runner scripts/phase3_cluster_lift.py). Shared rows 2,718 (2015-02-19 →
+2026-05-22); folds came out at **11** (design estimated ≈9 — parameters were
+applied verbatim, the estimate was just off; test windows 2020-08 → 2026-01).
+All runs on AYMStation, pinned LGBM + ClusteringConfig defaults, per-fold
+regime refits at split.train_end.
+
+### Primary (GC=F rvol h=5): **B does NOT beat A**
+- rel ΔRMSE **−0.37%** (bar −1.0%); B wins **4/11** splits (need 7).
+- mean RMSE: A 0.05438 / B 0.05418. Mean IC: A +0.001 / B +0.057
+  (IC is report-only).
+- B_notext ablation correctly not run (gated on B beating A).
+- run ids: A 5f236194-99fa-4f0e-b502-76b70a239923,
+  B 8af4cdef-be84-44a8-b286-ce167b036ec6.
+
+### Secondaries (report-only, never decide)
+- SI=F h=5: B **worse** (+1.80% rel RMSE, 5/11 wins).
+  A 381b16b1-a640-40a7-910f-582128851f00,
+  B c0e6e66e-76a5-41cf-bd95-add923057621.
+- GC=F h=20: B better on paper (−2.12% rel RMSE, 7/11 wins) — would have
+  passed a primary-style bar, but h=20 was pre-registered as report-only;
+  it does not decide anything. If regime-at-longer-horizon is worth chasing,
+  it needs its own pre-registration first.
+  A fbcb1c5c-ef2c-442d-b685-31a2c213fd26,
+  B 1f97199c-9b1e-4546-b98a-bd57e9a5e93a.
+
+### Consequence (per the pre-registered decision rules)
+- **No corpus-scale embedding spend**: the null B−A readout "caps arm C's
+  priority" — the assessment §7 GPU gate stays closed. No new A6000 instance
+  needed for now (server was deleted anyway, see earlier entry).
+- Per-split table: results/phase3_cluster_lift_readout.csv (66 rows).
+
+### Honest caveats
+- Fold count 11 vs the design's estimated ≈9 (estimate error, not a rule
+  change; recorded here for transparency).
+- The known val/test embargo caveats from the design apply identically to
+  both arms; the paired Δ mostly cancels them (assumption, not theorem).
+- Splits 9–10 (2025–2026 test windows) have 2–4× the RMSE of earlier splits
+  in every arm — the recent vol regime dominates the mean; the per-split win
+  count was the guard against exactly this and it also says no.
+
+### Addendum: Phase 3 write-up
+- Consolidated the phase into results/phase3_writeup.md (corpus, taxonomy,
+  pre-registered null, consequences). Phase 3 considered closed; branch
+  merging to main next.

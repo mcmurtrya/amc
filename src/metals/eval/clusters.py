@@ -48,8 +48,9 @@ def cluster_forward_stats(
     ``assignments`` must contain ``timestamp_utc, cluster_id``.
     """
     if assignments.empty or forward.empty:
-        return pd.DataFrame(columns=["cluster_id", "ticker", "horizon",
-                                     "n", "mean", "std", "hit_rate"])
+        return pd.DataFrame(
+            columns=["cluster_id", "ticker", "horizon", "n", "mean", "std", "hit_rate"]
+        )
     df = assignments.copy()
     df["timestamp_utc"] = pd.to_datetime(df["timestamp_utc"])
     df = df.set_index("timestamp_utc")
@@ -66,15 +67,17 @@ def cluster_forward_stats(
                 vals = g[col].dropna()
                 if vals.empty:
                     continue
-                rows.append({
-                    "cluster_id": int(cid),
-                    "ticker":     tk,
-                    "horizon":    h,
-                    "n":          int(len(vals)),
-                    "mean":       float(vals.mean()),
-                    "std":        float(vals.std(ddof=1)) if len(vals) > 1 else float("nan"),
-                    "hit_rate":   float((vals > 0).mean()),
-                })
+                rows.append(
+                    {
+                        "cluster_id": int(cid),
+                        "ticker": tk,
+                        "horizon": h,
+                        "n": int(len(vals)),
+                        "mean": float(vals.mean()),
+                        "std": float(vals.std(ddof=1)) if len(vals) > 1 else float("nan"),
+                        "hit_rate": float((vals > 0).mean()),
+                    }
+                )
     return pd.DataFrame(rows)
 
 
@@ -100,12 +103,14 @@ def dominant_topics(
     for cid, g in joined.groupby("cluster_id"):
         means = g[topic_cols].mean().sort_values(ascending=False).head(top_k)
         for rank, (col, prev) in enumerate(means.items(), start=1):
-            rows.append({
-                "cluster_id": int(cid),
-                "rank":       rank,
-                "topic_col":  col,
-                "mean_prevalence": float(prev),
-            })
+            rows.append(
+                {
+                    "cluster_id": int(cid),
+                    "rank": rank,
+                    "topic_col": col,
+                    "mean_prevalence": float(prev),
+                }
+            )
     return pd.DataFrame(rows)
 
 
@@ -126,9 +131,9 @@ def representative_dates(
         work[confidence_col] = 1.0
     out = (
         work.sort_values(["cluster_id", confidence_col], ascending=[True, False])
-            .groupby("cluster_id", as_index=False)
-            .head(per_cluster)
-            .sort_values(["cluster_id", "timestamp_utc"])
+        .groupby("cluster_id", as_index=False)
+        .head(per_cluster)
+        .sort_values(["cluster_id", "timestamp_utc"])
     )
     return out[["cluster_id", "timestamp_utc", confidence_col]]
 
@@ -160,8 +165,8 @@ def example_headlines(
         out_cols.insert(2, "source")
     sample = (
         joined.dropna(subset=["article_url"])
-              .groupby(["cluster_id", "timestamp_utc"], as_index=False, group_keys=False)
-              .head(per_date)
+        .groupby(["cluster_id", "timestamp_utc"], as_index=False, group_keys=False)
+        .head(per_date)
     )
     return sample[out_cols].reset_index(drop=True)
 
@@ -180,6 +185,8 @@ def cluster_summary(
     }
     if topic_prevalence_wide is not None:
         out["dominant_topics"] = dominant_topics(
-            assignments, topic_prevalence_wide, top_k=top_topics,
+            assignments,
+            topic_prevalence_wide,
+            top_k=top_topics,
         )
     return out

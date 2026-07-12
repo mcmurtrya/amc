@@ -39,6 +39,8 @@ dependencies = [
     "google-cloud-bigquery>=3.20",
     "google-cloud-bigquery-storage>=2.24",
     "db-dtypes>=1.2",
+    # LLM cluster labelling (Phase 3 label stage)
+    "anthropic>=0.60",
     # Plotting
     "matplotlib>=3.8",
     "seaborn>=0.13",
@@ -72,6 +74,9 @@ target-version = "py311"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "W", "B", "UP"]
+# Capitalised math-notation variables (X, E, Z, X_std, X_train, ...) are
+# idiomatic in the numeric / ML code; do not force them lowercase.
+ignore = ["N803", "N806"]
 
 [tool.mypy]
 python_version = "3.11"

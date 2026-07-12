@@ -21,7 +21,7 @@ from __future__ import annotations
 import json
 import subprocess
 import uuid
-from typing import Iterable
+from collections.abc import Iterable
 
 import numpy as np
 import pandas as pd
@@ -132,8 +132,7 @@ def fetch_predictions(run_id: str) -> pd.DataFrame:
 
 def compute_metrics(run_id: str) -> pd.DataFrame:
     """Compute per-(ticker, horizon) summary metrics for a run."""
-    cols = ["ticker", "horizon", "n", "rmse", "mae", "ic", "hit_rate",
-            "mean_pred", "mean_actual"]
+    cols = ["ticker", "horizon", "n", "rmse", "mae", "ic", "hit_rate", "mean_pred", "mean_actual"]
     df = fetch_predictions(run_id)
     if df.empty:
         return pd.DataFrame(columns=cols)
@@ -153,17 +152,19 @@ def compute_metrics(run_id: str) -> pd.DataFrame:
         else:
             ic = float("nan")
         hit_rate = float(np.mean(np.sign(pred) == np.sign(act)))
-        rows.append({
-            "ticker": ticker,
-            "horizon": int(horizon),
-            "n": int(n),
-            "rmse": rmse,
-            "mae": mae,
-            "ic": ic,
-            "hit_rate": hit_rate,
-            "mean_pred": float(np.mean(pred)),
-            "mean_actual": float(np.mean(act)),
-        })
+        rows.append(
+            {
+                "ticker": ticker,
+                "horizon": int(horizon),
+                "n": int(n),
+                "rmse": rmse,
+                "mae": mae,
+                "ic": ic,
+                "hit_rate": hit_rate,
+                "mean_pred": float(np.mean(pred)),
+                "mean_actual": float(np.mean(act)),
+            }
+        )
     return pd.DataFrame(rows, columns=cols)
 
 
@@ -180,7 +181,7 @@ def compare_runs(run_ids: Iterable[str], metric: str = "rmse") -> pd.DataFrame:
             f"SELECT run_id, name FROM runs WHERE run_id IN ({placeholders})",
             run_ids,
         ).fetchdf()
-    name_map = dict(zip(runs["run_id"], runs["name"]))
+    name_map = dict(zip(runs["run_id"], runs["name"], strict=False))
 
     frames = []
     for rid in run_ids:
@@ -198,7 +199,7 @@ def compare_runs(run_ids: Iterable[str], metric: str = "rmse") -> pd.DataFrame:
     if metric not in long.columns:
         raise ValueError(
             f"compare_runs: metric must be one of "
-            f"{[c for c in long.columns if c not in ('ticker','horizon','run')]}"
+            f"{[c for c in long.columns if c not in ('ticker', 'horizon', 'run')]}"
         )
     return long.pivot_table(
         index=["ticker", "horizon"],
@@ -259,13 +260,15 @@ def log_feature_importances(
     """
     if not importances:
         return
-    rows = pd.DataFrame({
-        "run_id":          [run_id] * len(importances),
-        "split_id":        [int(split_id)] * len(importances),
-        "feature_name":    list(importances.keys()),
-        "importance":      [float(v) for v in importances.values()],
-        "importance_type": [importance_type] * len(importances),
-    })
+    rows = pd.DataFrame(
+        {
+            "run_id": [run_id] * len(importances),
+            "split_id": [int(split_id)] * len(importances),
+            "feature_name": list(importances.keys()),
+            "importance": [float(v) for v in importances.values()],
+            "importance_type": [importance_type] * len(importances),
+        }
+    )
     with connection() as conn:
         _ensure_importance_schema(conn)
         conn.register("incoming_importances", rows)
@@ -325,9 +328,11 @@ def aggregate_feature_importances(
         sums = df.groupby("split_id")["importance"].transform("sum")
         df = df.assign(importance=df["importance"] / sums.replace(0, np.nan))
     g = df.groupby("feature_name")["importance"]
-    out = pd.DataFrame({
-        "mean_importance": g.mean(),
-        "std_importance":  g.std(ddof=0).fillna(0.0),
-        "n_splits":        g.count(),
-    }).reset_index()
+    out = pd.DataFrame(
+        {
+            "mean_importance": g.mean(),
+            "std_importance": g.std(ddof=0).fillna(0.0),
+            "n_splits": g.count(),
+        }
+    ).reset_index()
     return out.sort_values("mean_importance", ascending=False).reset_index(drop=True)

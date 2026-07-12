@@ -53,8 +53,9 @@ class ClusterPipeline:
     fit_at: str
 
 
-def _standardize(X: pd.DataFrame, mean: np.ndarray | None = None,
-                 std: np.ndarray | None = None) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+def _standardize(
+    X: pd.DataFrame, mean: np.ndarray | None = None, std: np.ndarray | None = None
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """Z-score features. If ``mean``/``std`` are passed, apply that exact transform."""
     arr = X.to_numpy(dtype=np.float64, na_value=0.0)
     if mean is None:
@@ -123,6 +124,7 @@ def assign_clusters(
     columns ``timestamp_utc, cluster_id, confidence``.
     """
     import hdbscan
+
     if X.empty:
         return pd.DataFrame(columns=["timestamp_utc", "cluster_id", "confidence"])
     # Align columns to the trained ordering. Missing columns are filled with 0.
@@ -130,11 +132,13 @@ def assign_clusters(
     X_std, _, _ = _standardize(aligned, mean=pipeline.feature_mean, std=pipeline.feature_std)
     embedding = pipeline.umap_model.transform(X_std)
     labels, strengths = hdbscan.approximate_predict(pipeline.hdbscan_model, embedding)
-    return pd.DataFrame({
-        "timestamp_utc": pd.to_datetime(X.index),
-        "cluster_id": np.asarray(labels, dtype=int),
-        "confidence": np.asarray(strengths, dtype=float),
-    })
+    return pd.DataFrame(
+        {
+            "timestamp_utc": pd.to_datetime(X.index),
+            "cluster_id": np.asarray(labels, dtype=int),
+            "confidence": np.asarray(strengths, dtype=float),
+        }
+    )
 
 
 def cluster_centroids(
@@ -154,6 +158,7 @@ def cluster_centroids(
     if len(labels) != len(embedding):
         # If new rows: project + re-cluster instead
         import hdbscan
+
         labels, _ = hdbscan.approximate_predict(pipeline.hdbscan_model, embedding)
     rows = []
     for cid in sorted(set(int(x) for x in labels)):
@@ -161,12 +166,14 @@ def cluster_centroids(
         if not mask.any():
             continue
         centroid = embedding[mask].mean(axis=0).astype(np.float32)
-        rows.append({
-            "cluster_id": int(cid),
-            "n_members": int(mask.sum()),
-            "centroid": centroid,
-            "centroid_dim": int(centroid.size),
-        })
+        rows.append(
+            {
+                "cluster_id": int(cid),
+                "n_members": int(mask.sum()),
+                "centroid": centroid,
+                "centroid_dim": int(centroid.size),
+            }
+        )
     return pd.DataFrame(rows)
 
 
@@ -179,12 +186,16 @@ def save_pipeline(pipeline: ClusterPipeline) -> Path:
     # Also write a JSON config sidecar for human inspection.
     sidecar = MODEL_DIR / f"{pipeline.model_version}.json"
     with sidecar.open("w") as f:
-        json.dump({
-            "model_version": pipeline.model_version,
-            "fit_at": pipeline.fit_at,
-            "config": asdict(pipeline.config),
-            "n_features": len(pipeline.feature_names),
-        }, f, indent=2)
+        json.dump(
+            {
+                "model_version": pipeline.model_version,
+                "fit_at": pipeline.fit_at,
+                "config": asdict(pipeline.config),
+                "n_features": len(pipeline.feature_names),
+            },
+            f,
+            indent=2,
+        )
     return path
 
 
@@ -201,7 +212,10 @@ def upsert_assignments(df: pd.DataFrame, model_version: str) -> int:
     work = df.copy()
     work["model_version"] = model_version
     with connection() as conn:
-        conn.register("incoming_clusters", work[["timestamp_utc", "model_version", "cluster_id", "confidence"]])
+        conn.register(
+            "incoming_clusters",
+            work[["timestamp_utc", "model_version", "cluster_id", "confidence"]],
+        )
         conn.execute(
             """
             INSERT INTO cluster_assignments
@@ -223,14 +237,20 @@ def upsert_centroids(df: pd.DataFrame, model_version: str) -> int:
         return 0
     work = df.copy()
     work["model_version"] = model_version
-    work["centroid"] = work["centroid"].apply(
-        lambda a: np.asarray(a, dtype=np.float32).tobytes()
-    )
+    work["centroid"] = work["centroid"].apply(lambda a: np.asarray(a, dtype=np.float32).tobytes())
     work["label"] = None
     work["label_source"] = None
     work["description"] = None
-    cols = ["model_version", "cluster_id", "n_members", "centroid", "centroid_dim",
-            "label", "label_source", "description"]
+    cols = [
+        "model_version",
+        "cluster_id",
+        "n_members",
+        "centroid",
+        "centroid_dim",
+        "label",
+        "label_source",
+        "description",
+    ]
     with connection() as conn:
         conn.register("incoming_centroids", work[cols])
         conn.execute(

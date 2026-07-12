@@ -6,10 +6,8 @@ import io
 import json
 
 import pandas as pd
-import pytest
 
 from metals.data.events import load_fomc_csv
-
 
 CSV_FIXTURE = """end_date,is_scheduled,is_multi_day,has_press_conference,meeting_kind,notes
 2019-01-30,true,true,true,regular,
@@ -25,7 +23,11 @@ def _read_fixture() -> pd.DataFrame:
 def test_load_fomc_csv_columns():
     df = _read_fixture()
     assert list(df.columns) == [
-        "timestamp_utc", "event_type", "event_id", "metadata", "source",
+        "timestamp_utc",
+        "event_type",
+        "event_id",
+        "metadata",
+        "source",
     ]
     assert (df["event_type"] == "FOMC").all()
     assert (df["source"] == "federalreserve.gov").all()

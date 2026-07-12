@@ -43,8 +43,7 @@ def _simulate_treatment_and_returns(
     """
     rng = np.random.default_rng(seed)
     idx = pd.date_range("2010-01-01", periods=n)
-    treatment = pd.Series(rng.binomial(1, treatment_prob, n), index=idx,
-                          name="treatment")
+    treatment = pd.Series(rng.binomial(1, treatment_prob, n), index=idx, name="treatment")
     r = pd.Series(rng.normal(0.0, noise_sd, n), index=idx)
     for lag, beta in impulse_lags.items():
         r = r + beta * treatment.shift(lag).fillna(0)
@@ -89,8 +88,7 @@ def test_local_projection_zero_effect_in_ci():
     out = local_projection(r, treatment, horizons=(1, 5, 20))
     for _, row in out.irf.iterrows():
         assert row["ci_low"] < 0 < row["ci_high"], (
-            f"h={row['horizon']}: zero must lie in [{row['ci_low']:.4f}, "
-            f"{row['ci_high']:.4f}]"
+            f"h={row['horizon']}: zero must lie in [{row['ci_low']:.4f}, {row['ci_high']:.4f}]"
         )
 
 
@@ -101,11 +99,14 @@ def test_local_projection_with_controls_preserves_treatment_sign():
     idx = pd.date_range("2010-01-01", periods=n)
     treatment = pd.Series(rng.binomial(1, 0.15, n), index=idx, name="hawkish")
     ctrl = pd.Series(rng.normal(0, 1, n), index=idx, name="ctrl")
-    r = (0.008 * treatment.shift(1).fillna(0)
-         + 0.002 * ctrl
-         + pd.Series(rng.normal(0, 0.01, n), index=idx))
+    r = (
+        0.008 * treatment.shift(1).fillna(0)
+        + 0.002 * ctrl
+        + pd.Series(rng.normal(0, 0.01, n), index=idx)
+    )
     out = local_projection(
-        r, treatment,
+        r,
+        treatment,
         controls=pd.DataFrame({"ctrl": ctrl}),
         horizons=(1,),
     )

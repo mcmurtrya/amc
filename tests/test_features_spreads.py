@@ -69,6 +69,7 @@ def test_log_spread_changes_does_not_warn_on_nonpositive_ratio():
     """Regression: a non-positive ratio (e.g. Au/Oil on 2020-04-20 when WTI
     was -$37.63) must produce NaN, not -inf or a RuntimeWarning."""
     import warnings
+
     p = _toy_prices(n=10)
     p.iloc[5, p.columns.get_loc("CL=F")] = -37.63
     r = compute_ratios(p)

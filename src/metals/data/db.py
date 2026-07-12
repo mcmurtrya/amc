@@ -7,9 +7,9 @@ unless overridden by the ``METALS_DB_PATH`` environment variable.
 from __future__ import annotations
 
 import os
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Iterator
 
 import duckdb
 from dotenv import load_dotenv

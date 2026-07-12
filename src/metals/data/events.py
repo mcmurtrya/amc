@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import argparse
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pandas as pd
@@ -88,7 +88,7 @@ def refresh(
     """Load + upsert FOMC events. ``cutoff`` (YYYY-MM-DD) drops future rows."""
     df = load_fomc_csv(path)
     if cutoff is None:
-        cutoff = datetime.now(timezone.utc).date().isoformat()
+        cutoff = datetime.now(UTC).date().isoformat()
     df = df[df["timestamp_utc"] <= pd.Timestamp(cutoff)]
     n = upsert_events(df)
     return {
@@ -101,10 +101,8 @@ def refresh(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Refresh FOMC events table.")
-    parser.add_argument("--path", default=str(DEFAULT_FOMC_CSV),
-                        help="Path to FOMC calendar CSV.")
-    parser.add_argument("--cutoff", default=None,
-                        help="YYYY-MM-DD; drop events after this date.")
+    parser.add_argument("--path", default=str(DEFAULT_FOMC_CSV), help="Path to FOMC calendar CSV.")
+    parser.add_argument("--cutoff", default=None, help="YYYY-MM-DD; drop events after this date.")
     args = parser.parse_args()
     summary = refresh(path=args.path, cutoff=args.cutoff)
     print(f"FOMC rows written: {summary['rows_written']}")

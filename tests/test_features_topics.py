@@ -24,10 +24,15 @@ def tmp_db(monkeypatch):
 
 
 def test_topic_prevalence_per_day_sums_to_one_per_day():
-    ts = pd.to_datetime([
-        "2024-01-01 09:00", "2024-01-01 12:00", "2024-01-01 18:00",
-        "2024-01-02 10:00", "2024-01-02 11:00",
-    ])
+    ts = pd.to_datetime(
+        [
+            "2024-01-01 09:00",
+            "2024-01-01 12:00",
+            "2024-01-01 18:00",
+            "2024-01-02 10:00",
+            "2024-01-02 11:00",
+        ]
+    )
     topics = np.array([0, 0, 1, 2, 2])
     out = topic_prevalence_per_day(ts, topics, include_noise=False)
     sums = out.groupby("timestamp_utc")["prevalence"].sum()
@@ -52,8 +57,7 @@ def test_topic_prevalence_per_day_includes_noise_when_asked():
 
 
 def test_topic_prevalence_empty_input():
-    out = topic_prevalence_per_day(pd.Series([], dtype="datetime64[ns]"),
-                                   np.array([], dtype=int))
+    out = topic_prevalence_per_day(pd.Series([], dtype="datetime64[ns]"), np.array([], dtype=int))
     assert out.empty
     assert set(out.columns) == {"timestamp_utc", "topic_id", "prevalence"}
 
@@ -61,15 +65,18 @@ def test_topic_prevalence_empty_input():
 def test_upsert_and_load_topic_prevalence_round_trip():
     from metals.data.migrations.runner import apply_migrations
     from metals.features.topics import (
-        load_topic_prevalence_wide, upsert_topic_prevalence,
+        load_topic_prevalence_wide,
+        upsert_topic_prevalence,
     )
 
     apply_migrations(verbose=False)
-    df = pd.DataFrame({
-        "timestamp_utc": pd.to_datetime(["2024-01-01", "2024-01-01", "2024-01-02"]),
-        "topic_id":      [0, 1, 0],
-        "prevalence":    [0.7, 0.3, 1.0],
-    })
+    df = pd.DataFrame(
+        {
+            "timestamp_utc": pd.to_datetime(["2024-01-01", "2024-01-01", "2024-01-02"]),
+            "topic_id": [0, 1, 0],
+            "prevalence": [0.7, 0.3, 1.0],
+        }
+    )
     n = upsert_topic_prevalence(df)
     assert n == 3
     wide = load_topic_prevalence_wide()
@@ -85,6 +92,7 @@ def test_fit_topic_model_requires_bertopic():
     path triggers cleanly when called. Skips if bertopic isn't installed."""
     pytest.importorskip("bertopic")
     from metals.features.topics import fit_topic_model
+
     # We don't actually fit — that requires sentence-transformers + a real
     # corpus. We assert the symbol is importable and callable.
     assert callable(fit_topic_model)

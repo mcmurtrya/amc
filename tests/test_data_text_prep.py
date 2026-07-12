@@ -58,8 +58,8 @@ def test_section_only_path_degrades_to_section_word():
 
 def test_edge_cases_do_not_crash():
     assert slug_from_url("") == ""
-    assert slug_from_url("not a url") == ""          # no netloc -> empty
-    assert url_to_text(None) == ""                   # type: ignore[arg-type]
+    assert slug_from_url("not a url") == ""  # no netloc -> empty
+    assert url_to_text(None) == ""  # type: ignore[arg-type]
     assert url_to_text("https://example.com") == ""  # domain only, no path
     assert clean_slug_text("") == ""
 

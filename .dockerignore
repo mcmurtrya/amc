@@ -1,0 +1,27 @@
+# Keep the build context small and the image clean. Anything needed only at
+# runtime is provided by the bind mount in docker-compose.yml.
+
+.git
+.venv
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# Data, DB and outputs — large, gitignored, bind-mounted at runtime.
+data/
+results/
+notebooks/
+*.duckdb
+*.duckdb.*
+
+# Secrets — passed at runtime via env_file, never baked into the image.
+.env
+
+# Container/build config and docs — not needed inside the image.
+.devcontainer/
+.dockerignore
+Dockerfile
+docker-compose.yml

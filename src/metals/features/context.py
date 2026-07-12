@@ -5,8 +5,12 @@ every input the clustering pipeline cares about:
 
     - macro state                (TIPS, DXY, VIX, GPR — levels and changes)
     - recent returns / vol       (5- and 20-day)
-    - text mean embedding         (PCA-reduced)
-    - topic prevalences          (wide vector from BERTopic)
+    - news tone                  (daily V2Tone means — trusted, 100% coverage)
+    - text mean embedding         (PCA-reduced, fit on the train window only;
+                                  optional — ``include_embeddings=False`` drops
+                                  the URL-embedding features, which the GDELT
+                                  assessment §3 flags as weak slug-driven signal)
+    - topic prevalences          (wide vector; themes-via-SQL by default)
     - COT positioning             (z-scored over 1y)
 
 This is the input to UMAP + HDBSCAN in ``metals.models.clustering``.
@@ -19,27 +23,55 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
+from metals.features.leakage import assert_chronological
 from metals.features.macro import compute_macro_features
-from metals.features.text_daily import load_daily as load_text_daily
-from metals.features.topics import load_topic_prevalence_wide
 
 
 @dataclass(frozen=True)
 class ContextConfig:
-    """How the contextual vector is constructed."""
+    """How the contextual vector is constructed.
+
+    ``include_embeddings=False`` (Option C) drops the URL-embedding features
+    (``text_pca_*``, ``embedding_dispersion``) while keeping ``n_articles`` and
+    the tone means — the corpus-wide signals the data assessment trusts.
+    """
 
     target_metal: str = "gold"
     embedding_pca_dims: int = 16
     rank_window: int = 252
+    include_embeddings: bool = True
+
+
+def _pca_fit_transform(
+    matrix: np.ndarray,
+    fit_mask: np.ndarray,
+    n_components: int,
+    seed: int = 42,
+) -> tuple[np.ndarray, object]:
+    """Whitening PCA fit on ``matrix[fit_mask]`` and applied to all of ``matrix``.
+
+    Fitting on a strict prefix (the clustering train window) and transforming the
+    full series keeps the projection free of look-ahead: the centring mean, the
+    components, and the whitening scale are all derived from training rows only.
+    Returns the reduced matrix (all rows) and the fitted estimator.
+    """
+    from sklearn.decomposition import PCA
+
+    fit_rows = matrix[fit_mask]
+    n_components = min(n_components, matrix.shape[1], max(1, fit_rows.shape[0] - 1))
+    pca = PCA(n_components=n_components, whiten=True, random_state=seed)
+    pca.fit(fit_rows)
+    return pca.transform(matrix), pca
 
 
 def _pca_reduce(matrix: np.ndarray, n_components: int, seed: int = 42) -> tuple[np.ndarray, object]:
-    """Whitening PCA. Returns the reduced matrix and the fitted scikit estimator."""
-    from sklearn.decomposition import PCA
+    """Whitening PCA fit and applied on the whole matrix (single in-sample block).
 
-    n_components = min(n_components, matrix.shape[1], max(1, matrix.shape[0] - 1))
-    pca = PCA(n_components=n_components, whiten=True, random_state=seed)
-    return pca.fit_transform(matrix), pca
+    The leakage-safe path in :func:`build_context` uses :func:`_pca_fit_transform`
+    with an explicit train mask; this wrapper is for callers that legitimately
+    have only one in-sample block (and for unit tests).
+    """
+    return _pca_fit_transform(matrix, np.ones(matrix.shape[0], dtype=bool), n_components, seed)
 
 
 def _stack_embeddings(df: pd.DataFrame, dim_hint: int | None = None) -> np.ndarray:
@@ -67,6 +99,7 @@ def build_context(
     cot_positioning: pd.DataFrame | None = None,
     text_daily: pd.DataFrame | None = None,
     topic_prevalence: pd.DataFrame | None = None,
+    pca_fit_until: str | pd.Timestamp | None = None,
     config: ContextConfig | None = None,
 ) -> tuple[pd.DataFrame, dict[str, object]]:
     """Assemble the daily contextual feature DataFrame plus fit artifacts.
@@ -85,6 +118,13 @@ def build_context(
         From ``metals.features.text_daily.load_daily()``. Optional.
     topic_prevalence : DataFrame, optional
         Wide topic prevalence from ``load_topic_prevalence_wide()``. Optional.
+    pca_fit_until : str or Timestamp, optional
+        Train-window boundary for the text-embedding PCA. The projection is fit
+        only on rows with timestamp <= this date and then applied to the whole
+        series, so ``text_pca_*`` carries no look-ahead. Pass the same date used
+        as the clustering ``train_until``. When ``None`` the PCA is fit on the
+        full sample (in-sample only — leaks future covariance; avoid for any
+        walk-forward run).
     config : ContextConfig
 
     Returns
@@ -115,7 +155,7 @@ def build_context(
         raise ValueError(f"{ticker} not present in prices.")
     log_p = np.log(prices[ticker].astype(float))
     own_state = pd.DataFrame(index=prices.index)
-    own_state[f"{ticker}_ret_5d"]  = log_p - log_p.shift(5)
+    own_state[f"{ticker}_ret_5d"] = log_p - log_p.shift(5)
     own_state[f"{ticker}_ret_20d"] = log_p - log_p.shift(20)
     ret_1d = log_p - log_p.shift(1)
     own_state[f"{ticker}_rvol_20d"] = ret_1d.rolling(20, min_periods=20).std() * float(np.sqrt(252))
@@ -124,26 +164,56 @@ def build_context(
     artifacts: dict[str, object] = {}
     text_part = pd.DataFrame(index=prices.index)
     if text_daily is not None and not text_daily.empty:
-        sub = text_daily[text_daily["metal"] == cfg.target_metal].set_index("timestamp_utc")
+        # Text is a single shared daily 'market' news-state (the per-metal text
+        # axis is redundant — see results/phase3_gdelt_data_assessment.md §1/§7);
+        # use it for every target metal, exactly as topic prevalence is shared.
+        from metals.features.text_daily import MARKET
+
+        shared = text_daily[text_daily["metal"] == MARKET]
+        if shared.empty and text_daily["metal"].nunique() == 1:
+            shared = text_daily  # single-series frame under a non-'market' label
+        sub = shared.set_index("timestamp_utc")
         sub.index = pd.to_datetime(sub.index)
         sub = sub.reindex(prices.index)
+        # Day-t context may only carry text known strictly before day t's
+        # trading: the daily text aggregates span the full UTC calendar day,
+        # including hours after the futures close, so join them lagged by one
+        # trading day (topic prevalences below get the same lag). Day-t price
+        # features are as-of the close, so they stay unlagged.
+        sub = sub.shift(1)
         text_part["n_articles"] = sub["n_articles"].fillna(0).astype(float)
-        text_part["embedding_dispersion"] = sub["embedding_dispersion"]
-        # Reduce mean_embedding -> PCA(d)
-        present = sub["mean_embedding"].notna()
-        if present.any():
-            matrix = _stack_embeddings(sub[present])
-            reduced, pca = _pca_reduce(matrix, cfg.embedding_pca_dims)
-            for k in range(reduced.shape[1]):
-                col = pd.Series(np.nan, index=prices.index)
-                col.loc[present[present].index] = reduced[:, k]
-                text_part[f"text_pca_{k}"] = col
-            artifacts["text_pca"] = pca
+        # Daily V2Tone means: 100%-coverage signals the GDELT assessment trusts;
+        # included regardless of the embedding flag. NaN on no-article days is
+        # deliberate — a missing news day must not fake a neutral tone of 0.
+        for tone_col in ("mean_tone_overall", "mean_tone_positive", "mean_tone_negative"):
+            if tone_col in sub.columns:
+                text_part[tone_col] = sub[tone_col].astype(float)
+        if cfg.include_embeddings:
+            text_part["embedding_dispersion"] = sub["embedding_dispersion"]
+            # Reduce mean_embedding -> PCA(d). Fit the projection on the train
+            # window only (rows up to ``pca_fit_until``) and apply it to every
+            # row, so the text_pca_* columns carry no look-ahead; fitting on the
+            # full sample would leak future covariance into past coordinates.
+            present = sub["mean_embedding"].notna()
+            if present.any():
+                matrix = _stack_embeddings(sub[present])
+                present_idx = present[present].index
+                if pca_fit_until is not None:
+                    fit_mask = np.asarray(present_idx <= pd.Timestamp(pca_fit_until))
+                else:
+                    fit_mask = np.ones(len(present_idx), dtype=bool)
+                if int(fit_mask.sum()) >= 2:
+                    reduced, pca = _pca_fit_transform(matrix, fit_mask, cfg.embedding_pca_dims)
+                    for k in range(reduced.shape[1]):
+                        col = pd.Series(np.nan, index=prices.index)
+                        col.loc[present_idx] = reduced[:, k]
+                        text_part[f"text_pca_{k}"] = col
+                    artifacts["text_pca"] = pca
 
-    # 4) Topic prevalences
+    # 4) Topic prevalences — text-derived, so lagged one trading day like §3.
     topic_part = pd.DataFrame(index=prices.index)
     if topic_prevalence is not None and not topic_prevalence.empty:
-        tp = topic_prevalence.reindex(prices.index).fillna(0.0)
+        tp = topic_prevalence.reindex(prices.index).shift(1).fillna(0.0)
         topic_part = tp
 
     # 5) COT positioning z-scores
@@ -162,4 +232,7 @@ def build_context(
 
     parts = [macro_feats, own_state, text_part, topic_part, cot_part]
     context = pd.concat([p for p in parts if not p.empty], axis=1)
+    # Clustering has no forward target, but the context index must still be
+    # strictly increasing and unique for walk-forward training to be honest.
+    assert_chronological(context)
     return context, artifacts

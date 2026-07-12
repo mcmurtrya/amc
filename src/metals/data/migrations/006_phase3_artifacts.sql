@@ -1,6 +1,11 @@
 -- Phase 3 persistence: daily text features, topic prevalences, and cluster
 -- assignments. All keyed on (timestamp_utc, ...) so they slot into the same
 -- canonical time axis as prices / macro / events.
+--
+-- Renamed from 005_phase3_artifacts.sql (2026-07-02) to fix the duplicate
+-- 005 prefix. DBs that already ran it under the old stem keep the stale
+-- 005_phase3_artifacts row in _schema_migrations and re-run this file as a
+-- no-op -- every statement below is IF NOT EXISTS.
 
 CREATE TABLE IF NOT EXISTS daily_text_features (
     timestamp_utc     TIMESTAMP   NOT NULL,

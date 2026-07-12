@@ -67,9 +67,12 @@ def test_target_realized_vol_is_strictly_future():
     macro = _toy_macro(prices.index)
     h, w = 5, 20
     fm = build_feature_matrix(
-        prices=prices, macro_wide=macro,
-        target_ticker="GC=F", target_kind="realized_vol",
-        target_horizon=h, realized_vol_window=w,
+        prices=prices,
+        macro_wide=macro,
+        target_ticker="GC=F",
+        target_kind="realized_vol",
+        target_horizon=h,
+        realized_vol_window=w,
     )
     expected_nan_tail = h + w - 1
     assert fm.y.iloc[-expected_nan_tail:].isna().all()
@@ -92,9 +95,12 @@ def test_target_realized_vol_does_not_peek_at_past():
     macro = _toy_macro(prices.index)
     h, w = 5, 20
     fm = build_feature_matrix(
-        prices=prices, macro_wide=macro,
-        target_ticker="GC=F", target_kind="realized_vol",
-        target_horizon=h, realized_vol_window=w,
+        prices=prices,
+        macro_wide=macro,
+        target_ticker="GC=F",
+        target_kind="realized_vol",
+        target_horizon=h,
+        realized_vol_window=w,
     )
     assert fm.y.iloc[spike_idx] == pytest.approx(0.0, abs=1e-9), (
         f"y at t={spike_idx} should be 0 (spike is in the past of the forward "
@@ -107,8 +113,11 @@ def test_target_return_works():
     prices = _toy_prices()
     macro = _toy_macro(prices.index)
     fm = build_feature_matrix(
-        prices=prices, macro_wide=macro,
-        target_ticker="GC=F", target_kind="return", target_horizon=5,
+        prices=prices,
+        macro_wide=macro,
+        target_ticker="GC=F",
+        target_kind="return",
+        target_horizon=5,
     )
     assert fm.y.iloc[-5:].isna().all()
     assert "ret" in fm.target_name
@@ -119,6 +128,9 @@ def test_build_rejects_unknown_target_ticker():
     macro = _toy_macro(prices.index)
     with pytest.raises(ValueError, match="not present"):
         build_feature_matrix(
-            prices=prices, macro_wide=macro,
-            target_ticker="XYZ", target_kind="realized_vol", target_horizon=5,
+            prices=prices,
+            macro_wide=macro,
+            target_ticker="XYZ",
+            target_kind="realized_vol",
+            target_horizon=5,
         )

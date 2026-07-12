@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import tempfile
 
-import numpy as np
 import pytest
 
 
@@ -20,12 +19,13 @@ def tmp_db(monkeypatch):
 
 def test_log_and_fetch_importances_round_trip():
     from metals.eval.harness import (
-        fetch_feature_importances, log_feature_importances, register_run,
+        fetch_feature_importances,
+        log_feature_importances,
+        register_run,
     )
 
     rid = register_run(name="test", model_type="lgbm_vol", target_type="realized_vol")
-    log_feature_importances(rid, split_id=0,
-                            importances={"feat_a": 10.0, "feat_b": 5.0})
+    log_feature_importances(rid, split_id=0, importances={"feat_a": 10.0, "feat_b": 5.0})
     out = fetch_feature_importances(rid)
     assert len(out) == 2
     assert set(out["feature_name"]) == {"feat_a", "feat_b"}
@@ -34,7 +34,9 @@ def test_log_and_fetch_importances_round_trip():
 
 def test_log_importances_is_idempotent_on_resubmit():
     from metals.eval.harness import (
-        fetch_feature_importances, log_feature_importances, register_run,
+        fetch_feature_importances,
+        log_feature_importances,
+        register_run,
     )
 
     rid = register_run(name="t", model_type="lgbm", target_type="vol")
@@ -46,7 +48,9 @@ def test_log_importances_is_idempotent_on_resubmit():
 
 def test_log_importances_upserts_updated_value():
     from metals.eval.harness import (
-        fetch_feature_importances, log_feature_importances, register_run,
+        fetch_feature_importances,
+        log_feature_importances,
+        register_run,
     )
 
     rid = register_run(name="t", model_type="lgbm", target_type="vol")
@@ -59,7 +63,9 @@ def test_log_importances_upserts_updated_value():
 
 def test_log_importances_empty_dict_is_noop():
     from metals.eval.harness import (
-        fetch_feature_importances, log_feature_importances, register_run,
+        fetch_feature_importances,
+        log_feature_importances,
+        register_run,
     )
 
     rid = register_run(name="t", model_type="lgbm", target_type="vol")
@@ -69,7 +75,9 @@ def test_log_importances_empty_dict_is_noop():
 
 def test_fetch_by_importance_type_filters():
     from metals.eval.harness import (
-        fetch_feature_importances, log_feature_importances, register_run,
+        fetch_feature_importances,
+        log_feature_importances,
+        register_run,
     )
 
     rid = register_run(name="t", model_type="lgbm", target_type="vol")
@@ -82,13 +90,15 @@ def test_fetch_by_importance_type_filters():
 
 def test_aggregate_normalizes_across_splits():
     from metals.eval.harness import (
-        aggregate_feature_importances, log_feature_importances, register_run,
+        aggregate_feature_importances,
+        log_feature_importances,
+        register_run,
     )
 
     rid = register_run(name="t", model_type="lgbm", target_type="vol")
     # Two splits with very different raw gain scales but same proportions.
     # After normalization, mean importance per feature should be ~equal.
-    log_feature_importances(rid, 0, {"x": 6.0, "y": 4.0})    # 60% / 40%
+    log_feature_importances(rid, 0, {"x": 6.0, "y": 4.0})  # 60% / 40%
     log_feature_importances(rid, 1, {"x": 600.0, "y": 400.0})  # same split
     agg = aggregate_feature_importances(rid, normalize=True)
     assert len(agg) == 2
@@ -102,7 +112,9 @@ def test_aggregate_normalizes_across_splits():
 
 def test_aggregate_unnormalized_uses_raw_values():
     from metals.eval.harness import (
-        aggregate_feature_importances, log_feature_importances, register_run,
+        aggregate_feature_importances,
+        log_feature_importances,
+        register_run,
     )
 
     rid = register_run(name="t", model_type="lgbm", target_type="vol")
@@ -118,5 +130,4 @@ def test_aggregate_empty_run_returns_empty_with_schema():
 
     out = aggregate_feature_importances("00000000-0000-0000-0000-000000000000")
     assert out.empty
-    assert set(out.columns) == {"feature_name", "mean_importance",
-                                "std_importance", "n_splits"}
+    assert set(out.columns) == {"feature_name", "mean_importance", "std_importance", "n_splits"}

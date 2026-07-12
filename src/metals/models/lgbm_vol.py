@@ -52,7 +52,11 @@ DEFAULT_LGBM_PARAMS: dict[str, Any] = {
 # (results/phase1_negative_ic_diagnosis.md) found this 108-feature block is
 # net-negative for IC on every metal, so the lean feature sets prune it.
 RETURNS_VOL_SUBSTRINGS: tuple[str, ...] = (
-    "_ret_", "_rvol_", "_skew_", "_kurt_", "_maxdd_",
+    "_ret_",
+    "_rvol_",
+    "_skew_",
+    "_kurt_",
+    "_maxdd_",
 )
 
 FEATURE_SETS = ("full", "lean", "lean_own")
@@ -121,7 +125,8 @@ def train_one_split(
 
     model = lgb.LGBMRegressor(**params)
     model.fit(
-        X_train, y_train,
+        X_train,
+        y_train,
         eval_set=[(X_val, y_val)],
         callbacks=[lgb.early_stopping(stopping_rounds=50, verbose=False)],
     )
@@ -134,13 +139,15 @@ def train_one_split(
         ic = float("nan")
 
     result = SplitResult(split_id=split.split_id, rmse=rmse, ic=ic, n_test=len(y_test))
-    pred_df = pd.DataFrame({
-        "timestamp_utc": X_test.index,
-        "ticker": fm.target_name.split("_")[0],  # original ticker prefix
-        "horizon": fm.target_horizon,
-        "prediction": preds,
-        "actual": y_test.values,
-    })
+    pred_df = pd.DataFrame(
+        {
+            "timestamp_utc": X_test.index,
+            "ticker": fm.target_name.split("_")[0],  # original ticker prefix
+            "horizon": fm.target_horizon,
+            "prediction": preds,
+            "actual": y_test.values,
+        }
+    )
 
     # Capture booster importances. feature_importances_ defaults to "split"
     # count; booster_.feature_importance("gain") is the more meaningful
@@ -149,8 +156,8 @@ def train_one_split(
     gain = model.booster_.feature_importance(importance_type="gain")
     split_cnt = model.booster_.feature_importance(importance_type="split")
     importances = {
-        "gain": {f: float(v) for f, v in zip(feat_names, gain)},
-        "split": {f: float(v) for f, v in zip(feat_names, split_cnt)},
+        "gain": {f: float(v) for f, v in zip(feat_names, gain, strict=False)},
+        "split": {f: float(v) for f, v in zip(feat_names, split_cnt, strict=False)},
     }
     return pred_df, result, importances
 
@@ -173,9 +180,7 @@ def run(
     macro_wide = load_macro()
 
     if prices.empty:
-        raise RuntimeError(
-            "No prices in DuckDB. Run `uv run python -m metals.data.prices` first."
-        )
+        raise RuntimeError("No prices in DuckDB. Run `uv run python -m metals.data.prices` first.")
     if macro_wide.empty:
         raise RuntimeError(
             "No macro series in DuckDB. Run `uv run python -m metals.data.fred` first."
@@ -203,8 +208,7 @@ def run(
         )
 
     run_name = (
-        f"lgbm_{ticker}_{target_kind}_h{target_horizon}_{feature_set}_"
-        f"{datetime.now():%Y%m%d_%H%M}"
+        f"lgbm_{ticker}_{target_kind}_h{target_horizon}_{feature_set}_{datetime.now():%Y%m%d_%H%M}"
     )
     run_id = register_run(
         name=run_name,
@@ -227,30 +231,31 @@ def run(
         notes=notes,
     )
 
-    splits = list(walk_forward_splits(
-        timestamps=fm.X.index,
-        train_start=train_start,
-        val_days=val_days,
-        test_days=test_days,
-        step_days=step_days,
-        min_train_days=min_train_days,
-    ))
+    splits = list(
+        walk_forward_splits(
+            timestamps=fm.X.index,
+            train_start=train_start,
+            val_days=val_days,
+            test_days=test_days,
+            step_days=step_days,
+            min_train_days=min_train_days,
+        )
+    )
 
     if not splits:
-        raise RuntimeError(
-            "No walk-forward splits produced — check date range and min_train_days."
-        )
+        raise RuntimeError("No walk-forward splits produced — check date range and min_train_days.")
 
     summaries: list[SplitResult] = []
     for split in splits:
         pred_df, result, importances = train_one_split(fm, split)
         log_predictions(run_id, pred_df)
         for imp_type, imp_dict in importances.items():
-            log_feature_importances(run_id, split.split_id, imp_dict,
-                                    importance_type=imp_type)
+            log_feature_importances(run_id, split.split_id, imp_dict, importance_type=imp_type)
         summaries.append(result)
-        print(f"split {result.split_id:>2d}  "
-              f"n={result.n_test:>4d}  rmse={result.rmse:.4f}  ic={result.ic:+.3f}")
+        print(
+            f"split {result.split_id:>2d}  "
+            f"n={result.n_test:>4d}  rmse={result.rmse:.4f}  ic={result.ic:+.3f}"
+        )
 
     mean_rmse = float(np.mean([s.rmse for s in summaries]))
     mean_ic = float(np.nanmean([s.ic for s in summaries]))
@@ -262,14 +267,17 @@ def run(
 def main() -> None:
     parser = argparse.ArgumentParser(description="LightGBM vol-forecasting baseline.")
     parser.add_argument("--ticker", default="GC=F")
-    parser.add_argument("--target", default="realized_vol",
-                        choices=["realized_vol", "return"])
+    parser.add_argument("--target", default="realized_vol", choices=["realized_vol", "return"])
     parser.add_argument("--horizon", type=int, default=5)
     parser.add_argument("--vol-window", type=int, default=20)
     parser.add_argument("--train-start", default="2010-01-01")
-    parser.add_argument("--feature-set", default="full", choices=list(FEATURE_SETS),
-                        help="full | lean (drop returns+vol block) | "
-                             "lean_own (keep only the target metal's own returns/vol)")
+    parser.add_argument(
+        "--feature-set",
+        default="full",
+        choices=list(FEATURE_SETS),
+        help="full | lean (drop returns+vol block) | "
+        "lean_own (keep only the target metal's own returns/vol)",
+    )
     parser.add_argument("--notes", default=None)
     args = parser.parse_args()
 

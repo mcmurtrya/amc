@@ -43,9 +43,9 @@ import os
 import sys
 import warnings
 from collections import OrderedDict
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
 
 import numpy as np
 import pandas as pd
@@ -56,9 +56,16 @@ DEFAULT_MODEL = "sentence-transformers/all-MiniLM-L6-v2"
 DEFAULT_DTYPE = "fp16"
 SHARD_PREFIX_LEN = 3
 SHARD_LRU_SIZE = 32
-DANGEROUS_PATH_TOKENS = frozenset({
-    "onedrive", "dropbox", "googledrive", "google drive", "icloud", "box sync",
-})
+DANGEROUS_PATH_TOKENS = frozenset(
+    {
+        "onedrive",
+        "dropbox",
+        "googledrive",
+        "google drive",
+        "icloud",
+        "box sync",
+    }
+)
 
 _model_cache: dict[str, object] = {}
 
@@ -72,7 +79,8 @@ def _warn_if_synced(path: Path) -> Path:
             f"directory ({sorted(overlap)}). This will trigger massive sync "
             f"uploads of tens of GB. Set METALS_EMBEDDING_CACHE_DIR to a path "
             f"outside any sync folder.",
-            RuntimeWarning, stacklevel=3,
+            RuntimeWarning,
+            stacklevel=3,
         )
     return path
 
@@ -133,10 +141,12 @@ def _arrow_dtype(dtype: str):
 
 
 def _shard_schema(dtype: str) -> pa.Schema:
-    return pa.schema([
-        ("text_hash", pa.binary(32)),
-        ("embedding", pa.list_(_arrow_dtype(dtype))),
-    ])
+    return pa.schema(
+        [
+            ("text_hash", pa.binary(32)),
+            ("embedding", pa.list_(_arrow_dtype(dtype))),
+        ]
+    )
 
 
 class ParquetEmbeddingCache:
@@ -161,8 +171,7 @@ class ParquetEmbeddingCache:
             hashes = tbl.column("text_hash").to_pylist()
             embeddings = tbl.column("embedding").to_pylist()
             shard = {
-                h: np.asarray(e, dtype=np.float32)
-                for h, e in zip(hashes, embeddings)
+                h: np.asarray(e, dtype=np.float32) for h, e in zip(hashes, embeddings, strict=False)
             }
         else:
             shard = {}
@@ -223,6 +232,7 @@ def _get_model(model_name: str):
     if model_name in _model_cache:
         return _model_cache[model_name]
     from sentence_transformers import SentenceTransformer
+
     model = SentenceTransformer(model_name)
     _model_cache[model_name] = model
     return model
@@ -256,7 +266,7 @@ def embed_texts(
     cache = ParquetEmbeddingCache(resolve_cache_dir(), config) if use_cache else None
     cached = cache.read_many([h for h in hexes if h]) if cache is not None else {}
     missing_idx: list[int] = []
-    for i, (t, h) in enumerate(zip(texts, hexes)):
+    for i, (t, h) in enumerate(zip(texts, hexes, strict=False)):
         if not t:
             continue
         if h not in cached:
@@ -277,12 +287,71 @@ def embed_texts(
         cached.update(new_items)
     dim = next((v.shape[0] for v in cached.values()), 0)
     ordered: list[np.ndarray] = []
-    for t, h in zip(texts, hexes):
+    for t, h in zip(texts, hexes, strict=False):
         if not t:
             ordered.append(np.zeros(dim, dtype=np.float32))
         else:
             ordered.append(cached[h])
     return np.vstack(ordered).astype(np.float32, copy=False)
+
+
+def cache_embeddings(
+    texts: Sequence[str],
+    model_name: str | None = None,
+    *,
+    batch_size: int = 256,
+    normalize: bool = True,
+    dtype: str | None = None,
+    sub_chunk: int = 50_000,
+) -> int:
+    """Encode ``texts`` and persist to the on-disk cache *without* building a
+    full in-RAM result array.
+
+    ``embed_texts`` returns one fp32 vector per input row and ends in a single
+    ``np.vstack`` — fine for bounded inputs, but ~97 GB (a guaranteed OOM) for
+    the full 63 M-row corpus. ``cache_embeddings`` streams in ``sub_chunk``-sized
+    blocks: each block reads the cache, encodes only the misses (de-duplicated
+    within the block), writes them, and is then discarded. Peak memory is one
+    block of vectors, not the whole corpus. Returns the count of newly-encoded
+    (cache-miss) vectors.
+    """
+    texts = list(texts)
+    if not texts:
+        return 0
+    config = EmbedConfig(
+        model_name=_resolve_model_name(model_name),
+        normalize=normalize,
+        dtype=dtype or DEFAULT_DTYPE,
+    )
+    cache = ParquetEmbeddingCache(resolve_cache_dir(), config)
+    model = None
+    n_new = 0
+    for start in range(0, len(texts), sub_chunk):
+        block = texts[start : start + sub_chunk]
+        hexes = [_hash_hex(t) if t else "" for t in block]
+        present = cache.read_many([h for h in hexes if h])
+        # De-duplicate misses within the block so identical texts encode once;
+        # cross-block duplicates are caught by the cache read above.
+        to_encode: dict[str, str] = {}
+        for h, t in zip(hexes, block, strict=True):
+            if h and h not in present:
+                to_encode.setdefault(h, t)
+        if not to_encode:
+            continue
+        if model is None:
+            model = _get_model(config.model_name)
+        keys = list(to_encode.keys())
+        vecs = model.encode(
+            [to_encode[h] for h in keys],
+            batch_size=batch_size,
+            normalize_embeddings=normalize,
+            show_progress_bar=False,
+            convert_to_numpy=True,
+        )
+        vecs = np.asarray(vecs, dtype=np.float32)
+        cache.write_many({h: vecs[j] for j, h in enumerate(keys)})
+        n_new += len(keys)
+    return n_new
 
 
 def embed_dataframe(

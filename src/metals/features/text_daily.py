@@ -2,16 +2,18 @@
 
 Phase 3 step 3.7. Reads from the ``headlines`` table (populated by
 ``metals.data.gdelt``), embeds headlines via ``metals.features.embeddings``,
-and produces per-(date, metal) aggregated features:
+and produces a single shared daily ``market`` news-state row of features:
 
 - ``n_articles``         article count
 - ``mean_embedding``     L2-normalised mean of headline embeddings
 - ``embedding_dispersion`` mean cosine distance from the centroid
 - ``mean_tone_overall``  average V2Tone overall score (and pos/neg variants)
 
-The metal axis is derived from GDELT themes per headline. A headline tagged
-with `ECON_GOLDPRICE` counts toward gold; one tagged with `WB_1699_METAL_ORE_MINING`
-counts toward every metal (it's industry-wide, not metal-specific).
+The per-metal axis was collapsed: GDELT has no per-metal theme except
+``ECON_GOLDPRICE``, which never occurs alone, so all four metals received
+byte-identical features. We now emit one row/day labelled ``metal == "market"``
+(see results/phase3_gdelt_data_assessment.md §1/§7); per-metal differentiation in
+the clustering vector comes from price/COT channels in ``metals.features.context``.
 
 Day boundaries are calendar UTC days; aggregation is independent across days.
 """
@@ -19,8 +21,8 @@ Day boundaries are calendar UTC days; aggregation is independent across days.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable
 
 import numpy as np
 import pandas as pd
@@ -33,23 +35,30 @@ from metals.data.db import connection
 # downstream prediction target.
 METALS = ("gold", "silver", "platinum", "palladium")
 
+# The per-metal text axis is redundant — every metal-bearing GDELT theme maps to
+# all four metals and the one gold-specific theme (ECON_GOLDPRICE) never appears
+# alone, so a per-(date, metal) aggregation is byte-identical across metals. Text
+# is therefore collapsed to a single shared daily news-state written under this
+# sentinel label. See results/phase3_gdelt_data_assessment.md §1/§7.
+MARKET = "market"
+
 THEME_TO_METALS: dict[str, tuple[str, ...]] = {
     # Metal-specific
-    "ECON_GOLDPRICE":               ("gold",),
+    "ECON_GOLDPRICE": ("gold",),
     # Generic / industry-wide themes affect every metal
-    "ECON_CENTRALBANK":             METALS,
-    "WB_1235_CENTRAL_BANKS":        METALS,
-    "EPU_POLICY_MONETARY_POLICY":   METALS,
-    "WB_444_MONETARY_POLICY":       METALS,
-    "ECON_INTEREST_RATES":          METALS,
-    "EPU_POLICY_INTEREST_RATES":    METALS,
+    "ECON_CENTRALBANK": METALS,
+    "WB_1235_CENTRAL_BANKS": METALS,
+    "EPU_POLICY_MONETARY_POLICY": METALS,
+    "WB_444_MONETARY_POLICY": METALS,
+    "ECON_INTEREST_RATES": METALS,
+    "EPU_POLICY_INTEREST_RATES": METALS,
     "WB_1125_INTEREST_RATE_POLICY": METALS,
-    "ECON_INFLATION":               METALS,
-    "WB_442_INFLATION":             METALS,
+    "ECON_INFLATION": METALS,
+    "WB_442_INFLATION": METALS,
     "WB_1164_COMMODITY_PRICES_SHOCKS": METALS,
-    "WB_1699_METAL_ORE_MINING":     METALS,
-    "SANCTIONS":                    METALS,
-    "ECON_TRADE_DISPUTE":           METALS,
+    "WB_1699_METAL_ORE_MINING": METALS,
+    "SANCTIONS": METALS,
+    "ECON_TRADE_DISPUTE": METALS,
 }
 
 
@@ -123,49 +132,67 @@ def aggregate_daily(
     headlines: pd.DataFrame,
     embeddings: np.ndarray | None = None,
 ) -> pd.DataFrame:
-    """Aggregate to per-(date, metal). Returns columns:
+    """Aggregate headlines to a single daily ``market`` news-state row.
 
-    timestamp_utc, metal, n_articles, mean_tone_overall, mean_tone_positive,
-    mean_tone_negative, mean_embedding (np.ndarray | None),
-    embedding_dispersion (float | NaN).
+    Returns columns:
+        timestamp_utc, metal, n_articles, mean_tone_overall, mean_tone_positive,
+        mean_tone_negative, mean_embedding (np.ndarray | None),
+        embedding_dispersion (float | NaN).
 
-    Caller is responsible for aligning ``embeddings[i]`` with
-    ``headlines.iloc[i]``. Pass ``embeddings=None`` to skip embedding-based
-    aggregates (useful when you only need counts/tone).
+    The per-metal axis is collapsed (see module docstring and
+    results/phase3_gdelt_data_assessment.md §1/§7): every row is labelled
+    ``metal == "market"``. Only articles whose themes map to >= 1 metal (i.e.
+    carry >= 1 known theme) are counted, matching the prior behaviour. Caller
+    aligns ``embeddings[i]`` with ``headlines.iloc[i]``; pass ``embeddings=None``
+    to skip embedding-based aggregates.
     """
-    cols = ["timestamp_utc", "metal", "n_articles",
-            "mean_tone_overall", "mean_tone_positive", "mean_tone_negative",
-            "mean_embedding", "embedding_dispersion"]
+    cols = [
+        "timestamp_utc",
+        "metal",
+        "n_articles",
+        "mean_tone_overall",
+        "mean_tone_positive",
+        "mean_tone_negative",
+        "mean_embedding",
+        "embedding_dispersion",
+    ]
     if headlines.empty:
         return pd.DataFrame(columns=cols)
 
+    hl = headlines.reset_index(drop=True)
     # Day-floor the timestamps so groupby keys are calendar days.
-    day = pd.to_datetime(headlines["timestamp_utc"]).dt.floor("D")
-    # Expand each headline into one row per applicable metal.
-    rows = []
-    for i, hl in headlines.reset_index(drop=True).iterrows():
-        themes = hl["themes_list"] if "themes_list" in hl else _parse_themes_field(hl.get("themes"))
-        metals = metals_for_themes(themes)
-        if not metals:
-            continue
-        for m in metals:
-            rows.append((day.iloc[i], m, i))
-    if not rows:
+    day = pd.to_datetime(hl["timestamp_utc"]).dt.floor("D")
+    # Keep only articles carrying >= 1 known theme (=> >= 1 metal), then group by
+    # calendar day into one shared 'market' news-state.
+    if "themes_list" in hl.columns:
+        themes_series = hl["themes_list"]
+    elif "themes" in hl.columns:
+        themes_series = hl["themes"].apply(_parse_themes_field)
+    else:
+        themes_series = pd.Series([[] for _ in range(len(hl))], index=hl.index)
+    keep_idx = np.flatnonzero(themes_series.apply(lambda t: bool(metals_for_themes(t))).to_numpy())
+    if keep_idx.size == 0:
         return pd.DataFrame(columns=cols)
-    pairs = pd.DataFrame(rows, columns=["timestamp_utc", "metal", "_row_idx"])
+    pairs = pd.DataFrame({"timestamp_utc": day.to_numpy()[keep_idx], "_row_idx": keep_idx})
 
     out_rows = []
-    for (ts, metal), g in pairs.groupby(["timestamp_utc", "metal"], sort=True):
+    for ts, g in pairs.groupby("timestamp_utc", sort=True):
         idxs = g["_row_idx"].to_numpy()
-        sub = headlines.iloc[idxs]
+        sub = hl.iloc[idxs]
         n = len(sub)
         # Tone — drop NaN, mean the rest
-        tone_overall = float(sub["tone_overall"].dropna().mean()) if "tone_overall" in sub else float("nan")
-        tone_pos = float(sub["tone_positive"].dropna().mean()) if "tone_positive" in sub else float("nan")
-        tone_neg = float(sub["tone_negative"].dropna().mean()) if "tone_negative" in sub else float("nan")
+        tone_overall = (
+            float(sub["tone_overall"].dropna().mean()) if "tone_overall" in sub else float("nan")
+        )
+        tone_pos = (
+            float(sub["tone_positive"].dropna().mean()) if "tone_positive" in sub else float("nan")
+        )
+        tone_neg = (
+            float(sub["tone_negative"].dropna().mean()) if "tone_negative" in sub else float("nan")
+        )
         mean_emb = None
         dispersion = float("nan")
-        if embeddings is not None and len(embeddings) > max(idxs):
+        if embeddings is not None and len(embeddings) > int(idxs.max()):
             E = embeddings[idxs]
             centroid = E.mean(axis=0)
             norm = np.linalg.norm(centroid)
@@ -178,16 +205,18 @@ def aggregate_daily(
                 # mean (1 - cos_sim).
                 sims = E @ centroid
                 dispersion = float(1.0 - sims.mean())
-        out_rows.append({
-            "timestamp_utc": ts,
-            "metal": metal,
-            "n_articles": n,
-            "mean_tone_overall": tone_overall,
-            "mean_tone_positive": tone_pos,
-            "mean_tone_negative": tone_neg,
-            "mean_embedding": mean_emb,
-            "embedding_dispersion": dispersion,
-        })
+        out_rows.append(
+            {
+                "timestamp_utc": pd.Timestamp(ts),
+                "metal": MARKET,
+                "n_articles": n,
+                "mean_tone_overall": tone_overall,
+                "mean_tone_positive": tone_pos,
+                "mean_tone_negative": tone_neg,
+                "mean_embedding": mean_emb,
+                "embedding_dispersion": dispersion,
+            }
+        )
     return pd.DataFrame(out_rows, columns=cols)
 
 
@@ -196,18 +225,35 @@ def upsert_daily(df: pd.DataFrame) -> int:
     if df.empty:
         return 0
     work = df.copy()
+
     # Pack mean embeddings as bytes and record their dim.
     def _pack(arr):
         if arr is None:
             return None
         return np.asarray(arr, dtype=np.float32).tobytes()
+
     work["mean_embedding"] = work["mean_embedding"].apply(_pack)
     work["embedding_dim"] = df["mean_embedding"].apply(
         lambda a: int(len(a)) if a is not None else None
     )
-    cols = ["timestamp_utc", "metal", "n_articles",
-            "mean_embedding", "embedding_dim", "embedding_dispersion",
-            "mean_tone_overall", "mean_tone_positive", "mean_tone_negative"]
+    # NaN dispersion (embeddings-free aggregation, or single-article days) must
+    # land as SQL NULL, not a float NaN, so the COALESCE guard below can see it.
+    work["embedding_dispersion"] = (
+        work["embedding_dispersion"]
+        .astype(object)
+        .where(work["embedding_dispersion"].notna(), None)
+    )
+    cols = [
+        "timestamp_utc",
+        "metal",
+        "n_articles",
+        "mean_embedding",
+        "embedding_dim",
+        "embedding_dispersion",
+        "mean_tone_overall",
+        "mean_tone_positive",
+        "mean_tone_negative",
+    ]
     with connection() as conn:
         conn.register("incoming_text_daily", work[cols])
         conn.execute(
@@ -222,9 +268,15 @@ def upsert_daily(df: pd.DataFrame) -> int:
             FROM incoming_text_daily
             ON CONFLICT (timestamp_utc, metal) DO UPDATE SET
                 n_articles           = EXCLUDED.n_articles,
-                mean_embedding       = EXCLUDED.mean_embedding,
-                embedding_dim        = EXCLUDED.embedding_dim,
-                embedding_dispersion = EXCLUDED.embedding_dispersion,
+                -- COALESCE: an embeddings-free re-run (Option C tone refresh)
+                -- must never clobber embedding aggregates an earlier GPU run
+                -- landed; a real re-encode carries non-NULLs and still wins.
+                mean_embedding       = COALESCE(EXCLUDED.mean_embedding,
+                                                daily_text_features.mean_embedding),
+                embedding_dim        = COALESCE(EXCLUDED.embedding_dim,
+                                                daily_text_features.embedding_dim),
+                embedding_dispersion = COALESCE(EXCLUDED.embedding_dispersion,
+                                                daily_text_features.embedding_dispersion),
                 mean_tone_overall    = EXCLUDED.mean_tone_overall,
                 mean_tone_positive   = EXCLUDED.mean_tone_positive,
                 mean_tone_negative   = EXCLUDED.mean_tone_negative
@@ -258,5 +310,6 @@ def load_daily(metal: str | None = None) -> pd.DataFrame:
         if blob is None or dim is None or pd.isna(dim):
             return None
         return np.frombuffer(blob, dtype=np.float32).copy()
+
     df["mean_embedding"] = df.apply(_unpack, axis=1)
     return df
