@@ -1508,3 +1508,15 @@ regime refits at split.train_end.
 - Ranking: hawkish/dovish FOMC (triangulation 1.00, stability 0.875) >
   dxy_up (0.33/0.92) > gpr, dxy_down (0.33/0.50). The table is the
   phase's central output per plan 5.9; only 5.10 (write-up) remains.
+
+### Addendum: 5.10 write-up — Phase 5 closed
+- Wrote results/phase5_triangulation.md (the plan-named deliverable):
+  robust findings (anchor 3-way triangulation; hawkish/dovish asymmetry;
+  regime heterogeneity as suggestive tier), disagreements with explicit
+  hypotheses (GPR index dilution; DXY event contamination), failed-
+  robustness list, and the couldn't-test list (headline items: no CPI/NFP
+  surprise ingestion; Bauer-Swanson ends 2023-12 so the 2024-26 cutting
+  cycle is untested; CATE underpowered at 26 events).
+- Method-comparison forest plot: results/phase5/method_comparison_gold_h5.png.
+- Roadmap Phase 5 row → Complete; CLAUDE.md status updated (Phases 0-3, 5
+  complete; Phase 4 deferred; Phase 6 next).

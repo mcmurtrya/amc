@@ -6,9 +6,13 @@ produce defensible empirical results, so correctness and the absence of look-ahe
 leakage matter more than latency or API ergonomics.
 
 Work is organized into 7 sequential phases (`plans/00_roadmap.md`, one plan file per
-phase). Current state: mid–**Phase 3** (GDELT news text → embeddings → unsupervised
-scenario clustering), on branch `phase3-streaming-themes`. Phases 4–6 (multimodal
-transformer, causal ML, validation) are planned but largely unbuilt.
+phase). Current state: **Phases 0–3 and 5 complete** (2026-07-11), working on `main`.
+Phase 3 closed with a labelled scenario taxonomy and a pre-registered null lift result
+(`results/phase3_writeup.md`); Phase 5 closed with the three-way-triangulated
+hawkish-FOMC finding and the master scenario table
+(`results/phase5_triangulation.md`). Phase 4 (transformer) was re-scoped to a
+numeric-only optional experiment and deliberately deferred; Phase 6 (validation)
+is next.
 
 ## Commands
 
