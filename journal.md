@@ -1236,3 +1236,48 @@ the full 2015+ corpus backfilled earlier today. Laptop session, no GPU.
   labels ✓) + `title_backfill-2026-07-11\` parquets (8.1 GB). Protects
   against WSL VHDX loss, not laptop loss — GCS Coldline off-site copy
   (~$0.24/mo in `amc-metals`) discussed and deferred.
+
+---
+
+## 2026-07-11 (2) — Cluster→forward-vol lift experiment: gate readout
+
+Ran the pre-registered A/B experiment (results/phase3_cluster_lift_design.md,
+runner scripts/phase3_cluster_lift.py). Shared rows 2,718 (2015-02-19 →
+2026-05-22); folds came out at **11** (design estimated ≈9 — parameters were
+applied verbatim, the estimate was just off; test windows 2020-08 → 2026-01).
+All runs on AYMStation, pinned LGBM + ClusteringConfig defaults, per-fold
+regime refits at split.train_end.
+
+### Primary (GC=F rvol h=5): **B does NOT beat A**
+- rel ΔRMSE **−0.37%** (bar −1.0%); B wins **4/11** splits (need 7).
+- mean RMSE: A 0.05438 / B 0.05418. Mean IC: A +0.001 / B +0.057
+  (IC is report-only).
+- B_notext ablation correctly not run (gated on B beating A).
+- run ids: A 5f236194-99fa-4f0e-b502-76b70a239923,
+  B 8af4cdef-be84-44a8-b286-ce167b036ec6.
+
+### Secondaries (report-only, never decide)
+- SI=F h=5: B **worse** (+1.80% rel RMSE, 5/11 wins).
+  A 381b16b1-a640-40a7-910f-582128851f00,
+  B c0e6e66e-76a5-41cf-bd95-add923057621.
+- GC=F h=20: B better on paper (−2.12% rel RMSE, 7/11 wins) — would have
+  passed a primary-style bar, but h=20 was pre-registered as report-only;
+  it does not decide anything. If regime-at-longer-horizon is worth chasing,
+  it needs its own pre-registration first.
+  A fbcb1c5c-ef2c-442d-b685-31a2c213fd26,
+  B 1f97199c-9b1e-4546-b98a-bd57e9a5e93a.
+
+### Consequence (per the pre-registered decision rules)
+- **No corpus-scale embedding spend**: the null B−A readout "caps arm C's
+  priority" — the assessment §7 GPU gate stays closed. No new A6000 instance
+  needed for now (server was deleted anyway, see earlier entry).
+- Per-split table: results/phase3_cluster_lift_readout.csv (66 rows).
+
+### Honest caveats
+- Fold count 11 vs the design's estimated ≈9 (estimate error, not a rule
+  change; recorded here for transparency).
+- The known val/test embargo caveats from the design apply identically to
+  both arms; the paired Δ mostly cancels them (assumption, not theorem).
+- Splits 9–10 (2025–2026 test windows) have 2–4× the RMSE of earlier splits
+  in every arm — the recent vol regime dominates the mean; the per-split win
+  count was the guard against exactly this and it also says no.
