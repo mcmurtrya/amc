@@ -1286,3 +1286,15 @@ regime refits at split.train_end.
 - Consolidated the phase into results/phase3_writeup.md (corpus, taxonomy,
   pre-registered null, consequences). Phase 3 considered closed; branch
   merging to main next.
+
+### Addendum: merge to main + recovered Phase 5 scaffolding
+- PR #1 merged: phase3-streaming-themes → main (690ca84). Phase 3 closed on
+  the mainline.
+- Merging surfaced two never-pushed local-main commits from 2026-06-23:
+  a CLAUDE.md dedupe + **Phase 5 causal scaffolding** (models/causal.py
+  with DoubleML ATE/placebo/CATE, features/scenarios.py, loaders, ~530
+  lines of tests — steps 5.1–5.4). Preserved verbatim on branch
+  `phase5-causal-scaffolding` (pushed); local main realigned to origin.
+  Integrating that branch (rebasing onto post-Phase-3 main, reconciling
+  CLAUDE.md/journal, re-running its tests) is the natural first task of
+  Phase 5.
