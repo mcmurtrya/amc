@@ -116,9 +116,10 @@ A transformer ablation becomes relevant only if the deferred Phase 4 runs.
 
 ## Status of remaining plan items
 
-- **6.8/6.9 (full methodology + findings write-ups)**: the findings skeleton
-  is this document plus `phase5_triangulation.md`; the 15–25-page
-  methodology document is a deliberate, separate writing project.
+- **6.8/6.9 (full methodology + findings write-ups)**: **done** —
+  `results/phase6_methodology.md` (9-section standalone methodology) and
+  `results/phase6_findings.md` (scenario-first findings). Both drafted from
+  committed source material; no analyses re-run.
 - **6.10 (reproducibility package)**: partially standing (uv-pinned deps,
   harness records, master table, scripts); missing: single-command refresh/
   retrain entry points and a model-weights checkpoint.

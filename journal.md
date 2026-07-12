@@ -1541,3 +1541,30 @@ regime refits at split.train_end.
   (transformer descoped). Remaining: 6.8/6.9 full write-ups, 6.10 repro
   entry points, 6.11 cleanup + v1.0 tag.
 - Runs: 7 hold-out model runs + scenario run in harness.
+
+---
+
+## 2026-07-11 (7) — Phase 6: methodology + findings write-ups (6.8/6.9)
+
+- **6.8** `results/phase6_methodology.md` — the standalone methodology record
+  for Phases 0-6. Nine sections per the plan (research question → data →
+  features → models → scenario identification → causal estimation → validation
+  → limitations → future work). Written to be reconstructable by a reader who
+  has seen none of the per-phase notes; every number sourced from committed
+  CSVs/docs (no re-runs). Load-bearing framing: the predictive-vs-causal
+  distinction, evaluation-first commitments (leakage-by-construction,
+  walk-forward-only, triangulation), and an explicit rationale for the Phase 4
+  descoping as a methodological result rather than a gap.
+- **6.9** `results/phase6_findings.md` — scenario-first per the plan. Leads
+  with the anchor (hawkish FOMC → metals ↓, 3-way triangulated), then the
+  asymmetry, cross-metal ordering, regime heterogeneity (suggestive tier),
+  the failed-robustness scenarios as documented measurement lessons, the
+  cross-metal surprises, what the hold-out changed, and the three required
+  paragraphs (most counterintuitive = text/regime lift null + OOS penalty;
+  most robust = the anchor; most fragile = regime-amplification CATE).
+- No analyses re-run — all figures pulled from phase1/2/3/5 write-ups,
+  scenario_master, and the phase6 CSVs.
+- Remaining in Phase 6: 6.10 repro entry points (`metals.refresh` /
+  `metals.train` single-command wrappers, weights checkpoint), 6.11 cleanup
+  (journal lessons-learned already at top; `_archive/` sweep; tag `v1.0`).
+
