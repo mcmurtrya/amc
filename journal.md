@@ -1442,3 +1442,21 @@ regime refits at split.train_end.
 - Next: run `causal.run()` against the real DB and compare the ATE table +
   placebo p-values with the Phase 2 IRFs (the June-23 session's own "next"
   note — now unblocked).
+
+---
+
+## 2026-07-11 (4) — Phase 5 first DoubleML run: hawkish-FOMC triangulated
+
+- Ran `metals.models.causal.run()` on the real DB (run
+  6b80f2b3-ad08-4acd-a676-73ac9a44319b): 60 ATEs (5 scenarios × 4 metals ×
+  3 horizons) + 100-trial placebos at h=5 → `double_ml_ates.parquet`.
+- **Headline: DoubleML corroborates Phase 2 almost exactly on hawkish FOMC**
+  — gold h=5: DML −1.43 [−2.23, −0.64] (placebo p=0.00) vs LP −1.50
+  [−2.40, −0.61]; every metal agrees to ~0.1 pp, same ordering, palladium
+  the weak link in both. Two estimators, different bias profiles, one
+  answer. Full comparison: results/phase5_dml_vs_lp_first_pass.md.
+- Also method-invariant: the hawkish/dovish asymmetry and the DXY-down
+  wrong-sign puzzle (now confirmed as a sample feature, not an LP artifact).
+  GPR spike flips sign between methods → verdict stays null/fragile.
+- Next: 5.5 SVAR as third estimator; CATE conditioned on Phase 3 regime
+  labels; 5.8 subsample stability for the DXY-down puzzle.
