@@ -1520,3 +1520,24 @@ regime refits at split.train_end.
 - Method-comparison forest plot: results/phase5/method_comparison_gold_h5.png.
 - Roadmap Phase 5 row → Complete; CLAUDE.md status updated (Phases 0-3, 5
   complete; Phase 4 deferred; Phase 6 next).
+
+---
+
+## 2026-07-11 (6) — Phase 6: hold-out validation core (6.1-6.7)
+
+- **6.1 freeze**: hold-out 2026-01-18 → 2026-05-22 (~63 scorable days) — the
+  12-month ideal is impossible after walk-forward development; boundary =
+  last lift-fold readout (2026-01-17); training embargoed at −44d;
+  contaminations audited and documented (thresholds re-fit pre-boundary for
+  6.5; Phase-1 feature-set choice disclosed).
+- **6.2-6.4**: VAR(2) and GARCH(1,1) beat all ML models on hold-out RMSE
+  (n.s., |DM t|≤1.2); regime and sentiment features hurt SIGNIFICANTLY
+  (DM t +3.4/+2.9) — the forecasting null now has an OOS penalty attached.
+  Random walk worst; lgbm_full holds the only positive IC (+0.21).
+- **6.5**: gpr coin-flip (2/4 signs); dxy_up never fired; dxy_down 4/4 signs
+  but 5-90× magnitudes concentrated in one April-2026 risk-off episode —
+  the contamination mechanism replicating OOS.
+- **6.7** limitations drafted in results/phase6_validation.md. 6.6 adapted
+  (transformer descoped). Remaining: 6.8/6.9 full write-ups, 6.10 repro
+  entry points, 6.11 cleanup + v1.0 tag.
+- Runs: 7 hold-out model runs + scenario run in harness.
