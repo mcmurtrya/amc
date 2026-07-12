@@ -1424,3 +1424,21 @@ regime refits at split.train_end.
   Integrating that branch (rebasing onto post-Phase-3 main, reconciling
   CLAUDE.md/journal, re-running its tests) is the natural first task of
   Phase 5.
+
+---
+
+## 2026-07-11 (3) — Phase 5 scaffolding integrated onto main
+
+- Merged `phase5-causal-scaffolding` (the recovered 2026-06-23 commits) onto
+  post-Phase-3 main via `phase5-integration`. Conflicts: CLAUDE.md → kept
+  main's; journal → both eras kept chronologically; roadmap Phase 3 row →
+  rewritten to current truth (both sides were stale).
+- **282 tests pass** (255 + 27 scaffolding) with zero code changes — the
+  June-23 causal work is fully compatible with current main.
+- Audit vs plan: 5.1–5.4 present (scenario specs/yaml, DoubleML ATE,
+  placebo p-values, CATE, `causal.run()` orchestrator + CLI). Still to
+  build: 5.5 SVAR, 5.6–5.9 triangulation/consistency/stability/master
+  table, 5.10 write-up.
+- Next: run `causal.run()` against the real DB and compare the ATE table +
+  placebo p-values with the Phase 2 IRFs (the June-23 session's own "next"
+  note — now unblocked).
