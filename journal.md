@@ -610,6 +610,132 @@ A running log of work, learnings, surprises, and open questions. Add an entry at
 
 ---
 
+## 2026-06-23 (DB migration verified + hygiene/doc pass)
+
+### What I did
+
+- **Verified the `metals.duckdb` transfer to WSL landed intact.** 23.84 GB at
+  `data/processed/metals.duckdb`, byte-exact with the OneDrive backup copy, no `.wal`
+  sibling (clean shutdown), opens read-only with all 10 tables counting cleanly. Key
+  counts: `headlines` 63,267,343, `prices` 56,256, `macro` 65,646, `positioning` 3,420,
+  `fomc_surprises` 354, `events` 176, plus the lazily-created harness tables (`runs` 33,
+  `run_predictions` 86,526, `run_feature_importances` 99,968) and `_schema_migrations` 5.
+  Not truncated, not corrupted.
+- **Ran a 5-agent state-mapping pass** to find natural continuation points. Confirmed
+  Phase 3 code is complete (no stubs; all 8 pipeline stages resolve to real modules),
+  Phase 5 deps are all installed and a DoubleMLPLR smoke test recovered a planted ATE,
+  and Phase 2 IRFs exist only as PNGs + hand-typed tables (treatment logic still inline
+  in notebooks 02-05).
+- **Hygiene + docs:**
+  - `uv sync --extra dev` — dev extras (pytest etc.) were never synced, so bare
+    `uv run pytest` fell back to a non-venv pytest that couldn't import duckdb (13
+    collection errors). Now collects 214 tests in-venv.
+  - Corrected the stale **48.5M -> 63.3M** headline count and **~37 GB -> ~48 GB** cache
+    estimate across CLAUDE.md, the roadmap, and the Phase 3 plan.
+  - Fixed the test-baseline docs: UMAP/HDBSCAN/BERTopic are *core* deps, so a full
+    install runs all 214 (214 passed / 0 skipped), not 212/2 — the importorskip guards
+    only trip in a degraded env.
+  - Fixed the stale embeddings cache path in the Phase 3 plan
+    (`data/processed/embeddings/{date}.parquet` -> `~/.cache/metals/embeddings` sharded).
+  - Removed the byte-identical `claude.md` case-collision duplicate; kept `CLAUDE.md`.
+
+### What I learned
+
+- The "48.5M-row backfill" in the docs was stale — the actual corpus is **63.3M rows**,
+  which rescales the embed cache to ~48 GB and the runtime upward (especially on the 6 GB
+  A1000, not the 4090 the old estimate assumed).
+- The harness tables survived the DuckDB migration intact, so the Phase 1/2 evaluation
+  history (33 runs) is preserved — no need to re-run baselines.
+
+### What confused me
+
+- My state-mapping workflow initially reported "no DuckDB exists" — a timing artifact:
+  the readers checked the filesystem while the 23.8 GB DB was still being copied into WSL.
+  It landed mid-run.
+
+### Open items not resolved today
+
+- Embed pass not yet run (GPU, ~48 GB, ~6-12 h on the A1000). `gdelt` stage no longer
+  needed — `headlines` is populated.
+- Phase 5 modules (`metals.models.causal`, `metals.models.svar`) still not written; the
+  treatment-builder refactor (lift notebook logic into `configs/scenarios.yaml` + a
+  module) is still pending.
+- Kitco RSS supplement (3.4), language/per-metal relevance filter, and the regime
+  sanity-check (3.13) still deferred.
+
+### Next session
+
+- Either kick off the embed pass (background, GPU) and build Phase 5 scaffolding (CPU)
+  in parallel, or do them in sequence. Both are now fully unblocked with the DB in place.
+
+---
+
+## 2026-06-23 (Phase 5 — causal scaffolding, steps 5.1-5.4)
+
+### What I did
+
+- **configs/scenarios.yaml** — the Phase 5 scenario registry (5.1). Migrated the
+  five inline Phase 2 event scenarios into a reproducible YAML: hawkish/dovish
+  FOMC (MPS_ORTH in-window terciles), gpr_spike (GPR 1-day diff > 95th pct),
+  dxy_up/down (DTWEXBGS 5-day pct_change beyond +/- 2 sigma). CPI/NFP listed as
+  available: false (no consensus ingestion). Added a config.scenarios() loader.
+- **metals.features.scenarios** — lifted the notebook treatment logic into pure,
+  tested functions: ScenarioSpec/ScenarioConfig + YAML parse, the roll-FORWARD
+  event->trading-day aligner (the duplicated notebook loop), build_treatment
+  (two paths: sparse FOMC events vs daily macro), build_confounders (Phase 2
+  control set: ret_5d_lag, rvol_20d_lag, dxy_5d_chg, vix, real_yield) with the
+  exclude-own-driver rule. Thresholds fit in-window; treatment active in-window
+  only.
+- **metals.features.loaders** — added the three missing read loaders:
+  load_fomc_surprises, load_events, load_positioning (preserving the Friday COT
+  release date; lowercase metal->ticker map lives in scenarios.py).
+- **metals.models.causal** — DoubleML estimator (5.2-5.4): estimate_ate
+  (DoubleMLIRM, LGBM g+m, K-fold, doubly-robust ATE + 95% CI), placebo_pvalue
+  (random +/- [5,60]d offsets), estimate_cate (econml CausalForestDML),
+  estimate_scenarios (pure; builds the (scenario, metal, horizon) ATE table) and
+  a run() orchestrator that writes data/processed/double_ml_ates.parquet and
+  registers a 'causal' run with the harness. Outcome reuses
+  lp.cumulative_log_returns so DoubleML and the Phase 2 LP share one outcome def.
+- **27 new tests** (test_features_loaders / test_features_scenarios /
+  test_models_causal). The causal tests recover a planted ATE under confounding
+  (where a naive mean-diff is biased), check the zero-effect CI, the in-window
+  threshold rule, roll-forward alignment, and the placebo/CATE/table shapes. All
+  27 pass; doubleml/lightgbm/econml gated by importorskip.
+
+### What I learned
+
+- doubleml 0.11.3: DoubleMLData.from_arrays(x, y, d) + DoubleMLIRM(data, ml_g,
+  ml_m, n_folds, score="ATE"); after .fit(): .coef / .se / .confint(level=).
+- A DatetimeIndex comparison (index >= ts) already returns a numpy bool array, so
+  no .to_numpy() on it (cost one round of red tests).
+- DoubleML draws its cross-fitting split off the numpy global RNG, so
+  np.random.seed(seed) inside estimate_ate is needed for reproducibility
+  alongside the learner random_state.
+
+### Decisions
+
+- Per the user: when the SVAR is built (deferred), its IRF bands use a **Bayesian
+  Normal-inverse-Wishart posterior** over the reduced-form VAR (not frequentist
+  rotation-only bands). Recorded in plans/phase_5_causal_ml_triangulation.md 5.5.
+- Scope this pass: causal-first (5.1-5.4). SVAR (5.5) and triangulation/master
+  table (5.6-5.9) deferred to a later pass.
+
+### Open items not resolved today
+
+- metals.models.svar (sign-restricted SVAR with NIW bands) not built.
+- eval/triangulation (agreement / cross-metal consistency / subsample stability
+  scores, scenario_master.parquet) not built.
+- Real-data run of metals.models.causal.run() not executed — it's CPU-fine and
+  the 23.8 GB DB is now present, so it CAN run locally; left as a compute step.
+- COT positioning confounders (net managed-money, 4-wk change, 1-yr pctile) not
+  yet folded into build_confounders (the loader exists now).
+- CPI / NFP / ECB / BoE scenarios still need consensus/surprise ingestion.
+
+### Next session
+
+- Build metals.models.svar (Rubio-Ramirez + NIW posterior bands) and
+  eval/triangulation; then run causal.run() on the real DB and compare the ATE
+  table + placebo p-values against the Phase 2 IRFs.
 ## 2026-06-25 (Phase 3 — server verification + streaming/themes redesign)
 
 ### Context
@@ -1298,3 +1424,21 @@ regime refits at split.train_end.
   Integrating that branch (rebasing onto post-Phase-3 main, reconciling
   CLAUDE.md/journal, re-running its tests) is the natural first task of
   Phase 5.
+
+---
+
+## 2026-07-11 (3) — Phase 5 scaffolding integrated onto main
+
+- Merged `phase5-causal-scaffolding` (the recovered 2026-06-23 commits) onto
+  post-Phase-3 main via `phase5-integration`. Conflicts: CLAUDE.md → kept
+  main's; journal → both eras kept chronologically; roadmap Phase 3 row →
+  rewritten to current truth (both sides were stale).
+- **282 tests pass** (255 + 27 scaffolding) with zero code changes — the
+  June-23 causal work is fully compatible with current main.
+- Audit vs plan: 5.1–5.4 present (scenario specs/yaml, DoubleML ATE,
+  placebo p-values, CATE, `causal.run()` orchestrator + CLI). Still to
+  build: 5.5 SVAR, 5.6–5.9 triangulation/consistency/stability/master
+  table, 5.10 write-up.
+- Next: run `causal.run()` against the real DB and compare the ATE table +
+  placebo p-values with the Phase 2 IRFs (the June-23 session's own "next"
+  note — now unblocked).

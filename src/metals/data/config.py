@@ -29,3 +29,8 @@ def universe() -> dict[str, Any]:
 def fred_series() -> dict[str, Any]:
     """Return the parsed FRED series config."""
     return load_yaml("fred_series")
+
+
+def scenarios() -> dict[str, Any]:
+    """Return the parsed Phase 5 scenario registry (configs/scenarios.yaml)."""
+    return load_yaml("scenarios")
