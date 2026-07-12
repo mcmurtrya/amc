@@ -1460,3 +1460,30 @@ regime refits at split.train_end.
   GPR spike flips sign between methods → verdict stays null/fragile.
 - Next: 5.5 SVAR as third estimator; CATE conditioned on Phase 3 regime
   labels; 5.8 subsample stability for the DXY-down puzzle.
+
+---
+
+## 2026-07-11 (5) — SVAR built + run; regime-CATE run (plan 5.5 + 5.4)
+
+- **Built `metals.models.svar`** (hand-rolled per the 2026-06-23 decision):
+  NIW posterior + Haar-rotation Rubio-Ramirez, stationarity + impact-sign
+  rejection, baseline + alt restriction sets, 6 new tests (288 total green).
+- **SVAR run**: lag 1 (BIC), 500 accepted draws/set. Gold h=5: real-yield
+  shock −0.55% [−0.84,−0.28]; risk-aversion +0.46% [+0.17,+0.77]; USD
+  −0.40% [−0.69,−0.10]. Baseline ≈ alt (robust). Three-way triangulation on
+  the monetary channel now closed: LP −1.50 / DML −1.43 / SVAR −0.55 per sd
+  (×2–3 sd ≈ the event estimates). Bonus: safe-haven and USD channels are
+  real when identified from comovements — the Phase 2 event nulls were
+  measurement problems (GPR index; contaminated DXY events), not absent
+  channels.
+- **CATE run** (CausalForestDML, regimes lagged 1 day, 26 treated events):
+  hawkish effect on gold negative in EVERY regime; amplitude −0.26% →
+  −2.76%, largest in `fed-rate-hike-expectations` — the LLM's
+  headline-derived label marks the days when hawkish surprises hit hardest.
+  The Phase 3 taxonomy earns its keep as an effect modifier after failing
+  the forecast gate. Caveats: 3 zero-treated regimes are extrapolation;
+  top cell has 3 events; suggestive ordering, not point estimates.
+- Readouts: results/phase5_svar_cate_readout.md (+ CSVs). Runs:
+  SVAR + CATE 51dd25cb-6405-4a32-8c84-f0a43b874872.
+- Next: 5.8 subsample stability (DXY puzzle + CATE ordering), 5.7/5.9
+  formalization, 5.10 write-up.

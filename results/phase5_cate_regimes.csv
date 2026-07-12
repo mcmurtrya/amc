@@ -1,0 +1,15 @@
+regime,n,n_treated,cate_mean,cate_std,frac_negative,ticker
+fed-rate-hike-expectations,208,3,-0.027604266344776737,0.0,1.0,GC=F
+trade-war-dovish-fed-tailwind,74,0,-0.027587557080310583,0.0,1.0,GC=F
+noise,125,0,-0.01733723595542335,0.0,1.0,GC=F
+covid-recovery-stimulus-rebound,117,0,-0.017104194647693735,0.0,1.0,GC=F
+unclear,1047,13,-0.011842376627424345,0.006398101663201708,1.0,GC=F
+diffuse-macro-noise-baseline,679,7,-0.008705711063694001,0.0,1.0,GC=F
+mixed-newsflow-crude-uptrend,462,3,-0.0026377256568033977,0.0,1.0,GC=F
+fed-rate-hike-expectations,208,3,-0.02678698677366454,0.0,1.0,SI=F
+unclear,1047,13,-0.02095641765750423,0.014506343624778236,1.0,SI=F
+diffuse-macro-noise-baseline,679,7,-0.018773349991790513,0.0,1.0,SI=F
+covid-recovery-stimulus-rebound,117,0,-0.014156392730124243,0.0,1.0,SI=F
+noise,125,0,-0.012031876852134714,0.0,1.0,SI=F
+trade-war-dovish-fed-tailwind,74,0,0.004289115052832201,0.0,0.0,SI=F
+mixed-newsflow-crude-uptrend,462,3,0.007129922259997998,0.0,0.0,SI=F
