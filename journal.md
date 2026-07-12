@@ -1636,3 +1636,97 @@ regime refits at split.train_end.
   crashed session's file-history). Pointers added to CLAUDE.md, the Phase 7
   plan (now three governing docs), and the acquisition program header.
 - Uncommitted: the review (md+pdf) + the three pointer edits.
+
+## 2026-07-12 (3) — Findings visualizations: figure suite + interactive dashboard
+
+Turned the Phase 1/3/5/6 results into two delivery surfaces: a committed
+publication-quality figure suite and a shareable interactive dashboard. All new
+work lives in `results/figures/` (plus `results/amc_findings_dashboard.html`).
+
+- **Foundation, single source of truth.** `results/figures/_data.py` holds every
+  plotted number (traced to `phase5_scenario_master.csv`, `phase5_subsample_ates.csv`,
+  `phase5_cate_regimes.csv`, `phase6_holdout_metrics.csv`, `phase1_baseline.md`,
+  `phase3_writeup.md`); running it dumps `findings.json` so the PNGs and the web page
+  never diverge. `_style.py` is one matplotlib design system (light+dark) applied to
+  every figure via `render(draw, name)` → `<name>.png` + `<name>_dark.png`.
+- **Palette validated, not eyeballed.** Metals categorical mapping (Au=amber,
+  Ag=blue, Pt=aqua, Pd=red) chosen by running the dataviz skill's
+  `validate_palette.js` over candidate orderings, `--pairs all` in **both** modes;
+  candidate B was the intuitive 4-way spread that passes CVD in both (metals are
+  always direct-labelled, satisfying the contrast-relief / floor-band requirements).
+- **8 figures** (each a single message): fig1 anchor forest (LP+DML), fig2
+  triangulation on gold (LP·DML·SVAR), fig3 hawkish/dovish asymmetry, fig4 era decay,
+  fig5 regime CATE, fig6 robustness scorecard, fig7 hold-out horse race, fig8 the
+  data paradox (lean-vs-full IC dumbbell + lift gate).
+- **Orchestration.** A `Workflow` authored figs 2–8 in parallel (agents import from
+  `_data.py`, never retype numbers), then a second adversarial-verify stage checked
+  each figure's values against source CSVs and audited dataviz anti-patterns.
+  **Verifiers caught real issues, all fixed:** (a) fig6 title said "only one scenario
+  survives" but two FOMC rows score as survivors → retitled + dashboard §6 now notes
+  dovish "survives" only as a consistent *non-effect*; (b) fig2 had a **fabricated
+  SVAR point estimate** (−1.40, a band midpoint styled like the LP/DML points) and a
+  "consensus" band that was just the SVAR band relabelled → SVAR now shown as an
+  implied band only, `TRIANGULATION_CONSENSUS` corrected to the true point-estimate
+  cluster (−1.50,−1.43); (c) fig5 "largest exactly where…" softened over a 0.0017pp
+  tie with an n=0 extrapolated regime; (d) fig7 one-sided framing fixed — subtitle now
+  notes the classical wins are **not** significant (|DM t|≤1.2).
+- **Interactive dashboard** — "The Assay Readout" identity (mono-forward research-
+  instrument aesthetic, gold accent, cool ledger neutrals, theme-aware). Embeds the
+  verified light/dark PNGs (I can't browser-render here, so fidelity > native SVG),
+  with a natively-built interactive robustness scorecard, KPI tiles, per-figure data-
+  table toggles, and a theme toggle. Reveal-animation hidden state gated behind
+  `html.js` + a try/catch reveal-all so a JS error can never blank the page. A
+  `code-reviewer` agent statically proved the theme cascade and PNG light/dark swap
+  correct in all four theme states; flagged nits (swatch palette vs figures, negative-
+  zero in fmtPct, unescaped `<`, minus-glyph consistency) all fixed. Published as a
+  private Artifact.
+- **Build/repro.** `uv run python _data.py` (json) → `uv run python figN_*.py` (PNGs)
+  → `uv run python build_dashboard.py` (inlines base64 PNGs + json → the HTML).
+  Figure scripts are ruff-formatted; remaining lint is E501 on long title/source
+  strings (results/figures is outside the enforced `ruff check src tests` scope, which
+  still passes clean).
+- Uncommitted: everything in `results/figures/` + `results/amc_findings_dashboard.html`.
+
+---
+
+## 2026-07-12 (3) — Phase 7 amended: paid-data follow-through + new-mover paths
+
+- **Second adversarial pass over the plan** (30-agent workflow: 6 proposal
+  lenses — positioning/OI, options/IV, PGM supply, physical demand, macro
+  surprises, plan coherence — each proposal independently verified against
+  the pre-registered nulls, leakage, duplication, sample size, endogeneity).
+  All 24 proposals survived, most with substantive repairs; the verifiers
+  caught real bugs before they entered the plan: ZQ-only Kuttner is
+  structurally near-zero at the 2010–15 ZLB (need GSS target+path with
+  ZT/GE/SR3); FOMC statement times moved twice before 2013 (per-meeting
+  release-time table, never hardcoded windows); COT conditioning must use
+  release dates, not as-of Tuesdays; raw implied vol over-covers via the VRP
+  (gates must use expanding-window debiased IV); per-contract OI contracts
+  mechanically at quarterly rolls (onset labels need roll-neutral aggregate
+  OI, definition pre-registered before inspecting the backfill); Rh-confirmed
+  episode labels must use past-only windows (Phase 3 hindsight lesson);
+  supply-event lists need price-blind inclusion rules.
+- **Plan amendments** (`plans/phase_7_amc_program.md`): 7.1 five → seven
+  collectors (6: JM PGM/rhodium; 7: Greysheet bid capture + Terapeak
+  snapshots + conditional wholesale-feed logging) + paid-sprint paragraph +
+  collector 5 gains release-time table (5a) and consensus capture (5d);
+  7.2 intraday target+path upgrade promoted from optional, gate re-anchored,
+  IV-cycle/hedge-cost appendix added; 7.3/7.4 mandatory implied-vol benchmark
+  arms (debiased variants gate); 7.4 tightness index full-width from 2010 +
+  WorthPoint validation series + later-tier premium-dynamics bullet; 7.5
+  Rh-cluster recall validation (Factiva-audited) + supply-shock causal pass
+  (the Pd axis, sign-test tier); 7.6 backfilled labels, roll-neutral onsets,
+  Rh features behind ablation gate, conditional-predictive severity leg,
+  crowding-conditioned FOMC interaction; new 7.7 purchased-history provenance
+  gate; new §7.8 macro-release movers (CPI/NFP, mechanism-conditional signs —
+  the repo's own Phase 2 note contradicts an unconditional hot-CPI-negative
+  prior); Ordering rewritten with the paid sprint and a budget line (≤~$725).
+- **New-mover picture, honestly**: no second FOMC-grade triangulated mover is
+  promised. Credible causal candidates: CPI/payrolls surprises (~193 prints
+  each, best power) and PGM supply shocks (~15–22 events, sign-test tier,
+  fills the Pd gap). Positioning and IV enter as amplifiers/benchmarks, not
+  movers; physical premia likely not a spot mover (mechanical endogeneity)
+  but the premium playbook pays regardless. The data's real gift: event-count
+  power (CATE toward confirmatory), intraday identification (Phase 5 wishlist
+  item 6), and the supply axis. Roadmap + CLAUDE.md refs updated (seven
+  collectors).
