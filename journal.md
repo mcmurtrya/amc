@@ -1498,3 +1498,13 @@ regime refits at split.train_end.
   contamination, not a broken USD channel (agrees with the SVAR).
 - FOMC subsample cells needed min_treated relaxed 20→8 (flagged small_n;
   8-16 events/cell — signs only). Runs bf357e5a + 742239f3.
+
+### Addendum: 5.9 master scenario table
+- Assembled data/processed/scenario_master.parquet (+ committed CSV mirror
+  in results/): per scenario, all metal×horizon ATEs/CIs, gold placebo p,
+  cross-metal consistency (5.7, formalized as modal-sign share at h=5),
+  subsample stability (from 5.8), triangulation agreement (LP/DML/SVAR
+  signs, hand-coded from the readouts), and hand-written interpretations.
+- Ranking: hawkish/dovish FOMC (triangulation 1.00, stability 0.875) >
+  dxy_up (0.33/0.92) > gpr, dxy_down (0.33/0.50). The table is the
+  phase's central output per plan 5.9; only 5.10 (write-up) remains.
