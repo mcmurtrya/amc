@@ -6,12 +6,17 @@ research serves: a small dealer that buys scrap Au/Ag/Pt/Pd (assaying fine
 content) and buys/sells gold coin and specie — structurally long physical metal
 over a days-to-weeks inventory float.
 
-Two source documents govern this phase:
+Three source documents govern this phase:
 
 - `results/phase5_amc_business_implications.pdf` — the Phase 5 findings translated
   into AMC's hedging, spread, and inventory decisions (adversarially verified).
 - `results/amc_data_acquisition_program.md` (+ `.pdf`) — the start-now
   data-acquisition program (step 7.1 below, expanded).
+- `results/amc_paid_data_review.md` (+ `.pdf`) — the verified paid-data buy/skip
+  review (2026-07-12): Databento CME backfill (~$0–125, unblocks 7.2/7.6 labels
+  now) and Greysheet ($299/yr, wholesale coin benchmark) are the only buys; JM
+  PGM prices (incl. rhodium, free) flagged as candidate collector 6; sentiment
+  feeds and enterprise assessments ruled out with evidence.
 
 The portfolio below came out of a structured multi-agent brainstorm
 (2026-07-12): 25 raw ideas → 10 distinct projects → adversarial feasibility

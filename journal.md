@@ -1603,3 +1603,36 @@ regime refits at split.train_end.
   (7.1 collectors → 7.7 standing gates).
 - Next: finish Phase 6 close-out (6.10/6.11), then 7.1 collectors + 7.2
   surprise-series extension (~3 days, reactivates the hedge playbook live).
+
+---
+
+## 2026-07-12 (2) — crash recovery; paid-data review (companion doc)
+
+- **Crash forensics**: the previous session (launched from `results/`, hence a
+  separate transcript dir) died mid-write at 13:09:27 — transcript tail is
+  zero-filled NULs. Everything from its final request had already landed on
+  disk and NUL-scanned clean; only losses were the MEMORY.md index line
+  (restored) and the closing summary. Split the recovered work into two
+  commits by session of origin (`cee58d4` Phase 6 write-ups, `3cac00c` Phase 7
+  reorientation) and pushed — first push containing the AMC reorientation.
+- **Paid-data survey** (15-agent workflow: 6 category surveyors with live
+  vendor-page price checks → adversarial re-verification of each recommended
+  candidate → completeness critic). Verdicts: only two buys — **Databento**
+  CME backfill (~$0–125 one-time, likely inside free signup credits; official
+  daily settlement/OI 2010+ for GC/SI/PL/PA + ZQ, 1-min FOMC windows; options
+  add-on ~$50–300 → self-computed IV/skew) and **Greysheet** Coin Dealer
+  Digital ($299/yr, wholesale bid/ask — the side collector 2's retail scrape
+  can't see). Two survey verdicts were *reversed* by verification: Norgate's
+  "buy 6 months, keep the export" plan is void (delete-on-lapse license) and
+  FXMacroData's "point-in-time consensus" is retro-generated
+  (generated_at=2026 on 2002 events) — paid data can carry leakage too.
+  Free finds: JM PGM base prices incl. rhodium (candidate collector 6),
+  Goldhub India/China premia, GVZ via FRED, Terapeak's rolling 3-yr window
+  (start snapshots). Critic surfaced dealer-ops data outside research scope:
+  converter PGM content DBs, JBT counterparty credit, wholesale maker feeds
+  (natural collector 7 if a trading account exists), probate leads.
+- **Companion doc shipped**: `results/amc_paid_data_review.md` + `.pdf`
+  (house style, rendered via `uv run --with reportlab`; script preserved from
+  crashed session's file-history). Pointers added to CLAUDE.md, the Phase 7
+  plan (now three governing docs), and the acquisition program header.
+- Uncommitted: the review (md+pdf) + the three pointer edits.

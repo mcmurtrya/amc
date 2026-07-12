@@ -25,7 +25,10 @@ Phase 5 translated into AMC's decisions in
 `results/phase5_amc_business_implications.pdf`, and the start-now five-collector
 data-acquisition program (non-backfillable series: AMC ledger, coin premiums, search
 interest, CME open interest, event calendars) in
-`results/amc_data_acquisition_program.md`. Collectors are append-only with
+`results/amc_data_acquisition_program.md`; paid-data buy/skip review (prices verified
+2026-07-12: Databento CME backfill + Greysheet wholesale benchmark; sentiment feeds
+and enterprise assessments ruled out) in `results/amc_paid_data_review.md`.
+Collectors are append-only with
 `source`/`pulled_at` provenance and real-time flags; anything from AMC's ledger
 stays on the local machine.
 

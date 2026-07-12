@@ -2,8 +2,10 @@
 
 **Prepared 2026-07-12.** Companion to `results/phase5_amc_business_implications.pdf`
 (what the Phase 5 causal findings mean for AMC Company) and to the Phase 7 research
-portfolio (`plans/phase_7_amc_program.md`). Audience: deep business experience,
-above-average but non-expert statistics. Acronyms are spelled out on first use.
+portfolio (`plans/phase_7_amc_program.md`); the paid-side counterpart — what money
+could add to these free collectors — is `results/amc_paid_data_review.md`. Audience:
+deep business experience, above-average but non-expert statistics. Acronyms are
+spelled out on first use.
 
 ---
 
