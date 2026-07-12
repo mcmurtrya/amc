@@ -95,3 +95,22 @@ forecasting feature).
 Remaining for the phase: 5.7 cross-metal consistency (formalize), 5.8
 subsample stability (the DXY puzzle and the CATE ordering are the targets),
 5.9 master table, 5.10 write-up.
+
+## 3. Subsample stability (5.8)
+
+Runs `bf357e5a` (production guard) and `742239f3` (min_treated relaxed to 8,
+small-n cells flagged; Phase 2's subsample LP precedent). Fixed full-window
+treatment definitions; h=5; windows 2010-14 / 2015-19 / 2020-26 (plan's 2007
+edge is data-constrained). Tables: `phase5_subsample_{ates,stability}.csv`.
+
+| Scenario | Sign stability | Reading |
+|---|---|---|
+| Hawkish FOMC | **3/3 on Au, Ag, Pt**; Pd flips post-2020 | Gold magnitudes decay monotonically: −2.11% (2010-14, n=8) → −1.43% (2015-19) → −0.91% (2020-26) — the ~2.3× pre-2015 amplification matches Phase 2's QE-era-leverage finding via a different estimator. Pd again the unstable metal. |
+| Dovish FOMC | 2/2 on Au, Pt, Pd (2020-26 has <8 events) | Weak positives persist; nothing new. |
+| DXY up | **3/3 on Au, Ag, Pt** | Small (+0.4% full on Au, n.s.) but the most sign-consistent non-FOMC scenario. |
+| DXY down | Decomposes | **Gold is textbook-positive in 2020-26 (+1.05%)**; the inversion is PGM-concentrated (Pt −3.85%, Pd −2.80% in 2020-26). With the SVAR's canonical pure-USD shock, the refined story: the USD-gold channel is fine; the event definition catches PGM-specific liquidation/industrial episodes in the COVID era. |
+| GPR spike | Mixed (0–2 of 3) | Fragile everywhere; the null verdict stands. |
+
+Caveats: subsample FOMC cells have 8–16 treated events (SEs 2-3× the full
+window; silver's −6.66% in 2010-14 rides on 8 events — read signs, not
+magnitudes). All cells with n_treated < 20 are flagged `small_n` in the CSV.

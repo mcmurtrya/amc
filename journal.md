@@ -1487,3 +1487,14 @@ regime refits at split.train_end.
   SVAR + CATE 51dd25cb-6405-4a32-8c84-f0a43b874872.
 - Next: 5.8 subsample stability (DXY puzzle + CATE ordering), 5.7/5.9
   formalization, 5.10 write-up.
+
+### Addendum: 5.8 subsample stability
+- Hawkish FOMC sign-stable 3/3 subsamples on Au/Ag/Pt with monotone
+  magnitude decay (−2.1% → −1.4% → −0.9% on gold; ≈2.3× pre-2015
+  amplification, matching Phase 2's QE-leverage claim via DML). Pd flips
+  post-2020 — the unstable metal in every method.
+- DXY-down puzzle resolved further: gold is textbook-positive in 2020-26;
+  the inversion is PGM-concentrated (Pt/Pd) — event-definition
+  contamination, not a broken USD channel (agrees with the SVAR).
+- FOMC subsample cells needed min_treated relaxed 20→8 (flagged small_n;
+  8-16 events/cell — signs only). Runs bf357e5a + 742239f3.
