@@ -1568,3 +1568,38 @@ regime refits at split.train_end.
   `metals.train` single-command wrappers, weights checkpoint), 6.11 cleanup
   (journal lessons-learned already at top; `_archive/` sweep; tag `v1.0`).
 
+---
+
+## 2026-07-12 — Phase 7 scoped: the AMC program (business reorientation)
+
+- **Context established: the research client is AMC Company** — a small dealer
+  that buys scrap Au/Ag/Pt/Pd (assay-based) and buys/sells gold coin & specie;
+  structurally long physical metal over a days-to-weeks float. That float is
+  exactly the h=1/5/20 window Phase 5 estimated, so the causal results map
+  directly onto AMC's core inventory risk.
+- **Phase 5 → AMC translation**: `results/phase5_amc_business_implications.pdf`
+  (business-readable, Chicago style, acronyms expanded). Built via an
+  11-agent ground→map→verify workflow; the adversarial pass downgraded 6/20
+  naive implications (e.g. platinum ≠ palladium on Fed sensitivity; coin-premium
+  expansion is a hypothesis, not a result; regime labels must not be ex-ante
+  triggers).
+- **Research brainstorm** (17-agent workflow: 5 lenses → 25 ideas → 10 merged →
+  adversarial feasibility review): 1 green (float-window tail engine — the
+  sanctioned Phase 4 numeric experiment), transformers earned their place in
+  only 2/10 (tail engine as controlled experiment; PGM supply-event NLP
+  extraction) — the roadmap's lesson 5 confirmed independently. Every
+  refinement converged on baseline-first + gated transformer bake-offs.
+- **Tier 4 expanded into the five-collector data-acquisition program**
+  (`results/amc_data_acquisition_program.md` + `.pdf`): AMC ledger ingest,
+  retail coin-premium panel, Google Trends as-pulled archiver, CME daily
+  volume/OI collector, event calendars + surprise-series upkeep. Governing
+  fact: none of these series can be backfilled — every week of delay is
+  training data lost. ~7–10 build days total; three of five deliver business
+  value in week one. Off-site DB backup moves into the same sprint (laptop is
+  the sole corpus copy).
+- **Files reoriented to AMC**: CLAUDE.md (client + decision framing, Phase 7
+  pointer, Phase 6 state refreshed), README (intro + phase table row 7),
+  roadmap (Phase 7 section + status table), new `plans/phase_7_amc_program.md`
+  (7.1 collectors → 7.7 standing gates).
+- Next: finish Phase 6 close-out (6.10/6.11), then 7.1 collectors + 7.2
+  surprise-series extension (~3 days, reactivates the hedge playbook live).

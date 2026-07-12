@@ -1,20 +1,33 @@
 # CLAUDE.md
 
 Quantitative research on drivers of precious-metals prices (gold, silver, platinum,
-palladium). This is a **research codebase, not a deployed service**: code exists to
-produce defensible empirical results, so correctness and the absence of look-ahead
-leakage matter more than latency or API ergonomics.
+palladium), in service of **AMC Company** — a small dealer that buys scrap Au/Ag/Pt/Pd
+(assaying fine content) and buys/sells gold coin and specie, and is therefore
+structurally long physical metal over a days-to-weeks inventory float. This is a
+**research codebase, not a deployed service**: code exists to produce defensible
+empirical results and translate them into AMC's operating decisions (buy-spread
+floors, FOMC hedging, PGM risk alarms, coin demand/premium intelligence), so
+correctness and the absence of look-ahead leakage matter more than latency or API
+ergonomics.
 
-Work is organized into 7 sequential phases (`plans/00_roadmap.md`, one plan file per
-phase). Current state: **Phases 0–3 and 5 complete** (2026-07-11), working on `main`.
-Phase 3 closed with a labelled scenario taxonomy and a pre-registered null lift result
-(`results/phase3_writeup.md`); Phase 5 closed with the three-way-triangulated
-hawkish-FOMC finding and the master scenario table
-(`results/phase5_triangulation.md`). Phase 6's validation core is done
-(`results/phase6_validation.md`: 63-day hold-out, classical baselines beat ML,
-regime/sentiment features hurt OOS); remaining: the 6.8/6.9 long-form methodology +
-findings documents, 6.10 repro entry points, 6.11 cleanup + v1.0 tag. Phase 4
-(transformer) was re-scoped to a numeric-only optional experiment and deferred.
+Work is organized into sequential phases 0–7 (`plans/00_roadmap.md`, one plan file
+per phase). Current state: **Phases 0–3 and 5 complete** (2026-07-11), working on
+`main`. Phase 3 closed with a labelled scenario taxonomy and a pre-registered null
+lift result (`results/phase3_writeup.md`); Phase 5 closed with the
+three-way-triangulated hawkish-FOMC finding and the master scenario table
+(`results/phase5_triangulation.md`). Phase 6's validation core and long-form
+write-ups are done (`results/phase6_validation.md`: 63-day hold-out, classical
+baselines beat ML, regime/sentiment features hurt OOS; `phase6_methodology.md`,
+`phase6_findings.md`); remaining: 6.10 repro entry points, 6.11 cleanup + v1.0 tag.
+Phase 4 (transformer) was re-scoped to a numeric-only optional experiment and
+deferred. **Phase 7 — the AMC program — is scoped** (`plans/phase_7_amc_program.md`):
+Phase 5 translated into AMC's decisions in
+`results/phase5_amc_business_implications.pdf`, and the start-now five-collector
+data-acquisition program (non-backfillable series: AMC ledger, coin premiums, search
+interest, CME open interest, event calendars) in
+`results/amc_data_acquisition_program.md`. Collectors are append-only with
+`source`/`pulled_at` provenance and real-time flags; anything from AMC's ledger
+stays on the local machine.
 
 ## Commands
 

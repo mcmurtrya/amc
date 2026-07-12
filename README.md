@@ -1,10 +1,10 @@
 # metals
 
-Quantitative research on drivers of precious metals (gold, silver, platinum, palladium) prices, combining a multimodal transformer with classical statistical and causal-inference methods.
+Quantitative research on drivers of precious metals (gold, silver, platinum, palladium) prices, combining classical statistical and causal-inference methods with machine learning. Since July 2026 the program serves **AMC Company** — a small dealer that buys scrap precious metals (with assay) and deals in gold coin and specie — whose operating decisions (spread floors, event hedging, inventory risk, demand intelligence) set the research priorities.
 
 ## Roadmap
 
-The work is organized into seven phases. See `plans/00_roadmap.md` for an overview; each phase has its own step-by-step plan in `plans/`.
+The work is organized into sequential phases. See `plans/00_roadmap.md` for an overview; each phase has its own step-by-step plan in `plans/`.
 
 | Phase | Subject |
 |-------|---------|
@@ -15,6 +15,7 @@ The work is organized into seven phases. See `plans/00_roadmap.md` for an overvi
 | 4 | Multimodal transformer |
 | 5 | Causal ML and method triangulation |
 | 6 | Validation and writeup |
+| 7 | AMC program: data acquisition and dealer decision support |
 
 ## Setup
 

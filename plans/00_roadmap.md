@@ -74,6 +74,10 @@ Deliverable: a master table of scenarios with their causal effect estimates, con
 
 Out-of-sample year you never touched — typically the most recent 12 months. Quantify lift over benchmarks (random walk, GARCH(1,1), unconditional mean, sentiment-only model, LightGBM-only). Write up methodology, scenarios identified, and an honest limitations section. The writeup is where the learning consolidates.
 
+## Phase 7: AMC program (added 2026-07-12)
+
+Phases 0–6 answered *what moves metals prices*; Phase 7 turns the answers into operating decisions for **AMC Company**, the dealer the research serves (scrap Au/Ag/Pt/Pd buying with assay; gold coin & specie; structurally long inventory over a days-to-weeks float). Two tracks: (a) a start-now **five-collector data-acquisition program** for non-backfillable series — AMC's own ledger, retail coin premiums, search interest, CME daily open interest, event calendars (`results/amc_data_acquisition_program.md`); (b) a ten-project decision-support portfolio (spread floors, a live FOMC hedge playbook, PGM liquidation alarms, crisis indices, demand models), baseline-first with transformers only as pre-registered, kill-criterioned bake-offs. Full plan: `plans/phase_7_amc_program.md`; business translation of Phase 5: `results/phase5_amc_business_implications.pdf`.
+
 ---
 
 Each phase produces something usable on its own, so you can pause anywhere without throwing away effort. The three scenario methods come online at Phases 2, 3, and 5 respectively, and Phase 5 is where they get reconciled.
@@ -85,7 +89,7 @@ Each phase produces something usable on its own, so you can pause anywhere witho
 
 ---
 
-## Status as of 2026-06-25
+## Status as of 2026-07-12
 
 | Phase | Status | Notes |
 |---|---|---|
@@ -95,6 +99,7 @@ Each phase produces something usable on its own, so you can pause anywhere witho
 | 3 — Text + clustering | **Complete (merged to main 2026-07-11, PR #1)** — 139.9M-row GDELT corpus (2015-2026, titles backfilled), Option C tone+themes clustering, Opus-labelled 7-cluster taxonomy, pre-registered cluster-lift experiment | Lift readout: NO predictive lift at the primary target (GC=F h=5 rvol): rel ΔRMSE -0.37% vs -1.0% bar, 4/11 wins. Embedding gate (assessment §7) closed. Full narrative in results/phase3_writeup.md. |
 | 4 — Multimodal transformer | Not started | Unblocked once Phase 3 lands clusters and topic prevalences. |
 | 5 — Causal ML + triangulation | **Complete (2026-07-11)** — DoubleML ATE/placebo (5.2-5.3), regime-CATE (5.4), sign-restricted SVAR (5.5), subsample stability (5.8), master scenario table (5.7/5.9), write-up (5.10) | Anchor finding triangulated 3 ways: hawkish FOMC → gold −1.4% at h=5 (LP/DML/SVAR agree; sign-stable across eras; amplified in the rate-hike-expectations regime). GPR + DXY-down fail robustness for documented measurement reasons. See results/phase5_triangulation.md + scenario_master.parquet. |
-| 6 — Validation and writeup | Not started | Needs hold-out year frozen. |
+| 6 — Validation and writeup | **Core + write-ups done** (validation `results/phase6_validation.md`; methodology 6.8; findings 6.9) | 63-day hold-out: classical baselines (GARCH/VAR) beat ML; regime/sentiment features hurt OOS. Remaining: 6.10 repro entry points, 6.11 cleanup + v1.0 tag. |
+| 7 — AMC program | **Scoped (2026-07-12)** — `plans/phase_7_amc_program.md` | Start-now five-collector data program (`results/amc_data_acquisition_program.md`) + baseline-first decision-support portfolio. Phase 5 business translation: `results/phase5_amc_business_implications.pdf`. |
 
 **Cumulative test count: 282 — all pass (post Phase 5 scaffolding integration, 2026-07-11).**
