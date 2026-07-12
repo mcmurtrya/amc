@@ -70,11 +70,11 @@ Build a parameterized SQL query that filters GKG records to these themes and exp
 ### 3.6 Embedding model setup
 Default (as-built): `sentence-transformers/all-MiniLM-L6-v2` (384-dim).
 Alternative: `all-mpnet-base-v2` (768-dim, slightly better cluster fidelity but 2x storage and 5x slower).
-Selected MiniLM after the GDELT backfill confirmed 48.5M rows; storage and throughput became the binding constraint.
+Selected MiniLM after the GDELT backfill confirmed 63.3M rows; storage and throughput became the binding constraint.
 
 `src/metals/features/embeddings.py`:
 - Batch encode headlines on GPU if available
-- Cache embeddings to `data/processed/embeddings/{date}.parquet` so re-runs are cheap
+- Cache embeddings as sharded Parquet under `~/.cache/metals/embeddings` (one shard per `sha256(text)[:3]`, fp16 on disk), outside the repo and any sync folder; `METALS_EMBEDDING_CACHE_DIR` overrides. Re-runs are cheap.
 - Store a config hash so cache invalidates when the model changes
 
 ### 3.7 Daily aggregation of text features

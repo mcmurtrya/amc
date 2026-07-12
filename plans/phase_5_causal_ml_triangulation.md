@@ -67,6 +67,8 @@ Sign restrictions for identification (each restriction on impact, h=0):
 
 Use the `pyflux` or `arviz`-compatible setup, or hand-roll with Rubio-Ramirez algorithm. Compute IRFs over 60 days with 16/84 percentile bands from posterior draws.
 
+> **Build decision (2026-06-23):** `pyflux`/`arviz`/`pymc` are not installed, so the SVAR is hand-rolled. Bands come from a **Bayesian Normal-inverse-Wishart posterior** over the reduced-form VAR (draw reduced-form parameters from the NIW posterior, apply a random orthogonal rotation per draw, reject draws violating the impact sign restrictions, take 16/84 percentiles over accepted draws). This captures *both* estimation and identification uncertainty, not rotation uncertainty alone. As a robustness check, run an alternative sign-restriction set (plan "common pitfalls").
+
 ### 5.6 Triangulation table
 For each scenario, three estimates of the gold impact at h=5 days:
 - β from local projection (Phase 2)

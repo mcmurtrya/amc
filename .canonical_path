@@ -1,0 +1,9 @@
+This file marks the canonical working copy of the repo.
+
+The WSL repo at /home/mcmur/projects/amc/ is the working copy.
+The OneDrive mirror at C:\Users\mcmur\OneDrive\Documents\Claude\Projects\amc
+is kept for backup but is no longer the source of truth.
+
+Rationale: OneDrive sync corrupted file writes during the harness and
+embedding-module rewrites; the embedding cache also can't live in a
+synced folder. Working in WSL avoids both problems.

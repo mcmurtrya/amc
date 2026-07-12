@@ -92,9 +92,9 @@ Each phase produces something usable on its own, so you can pause anywhere witho
 | 0 — Scoping and setup | Complete | DuckDB, eval harness, walk-forward CV |
 | 1 — Price + LightGBM baseline | Complete + cleanup | `BAA10Y` replaced license-restricted `BAMLH0A0HYM2`. Feature-importance pipeline added. Lean / lean_own feature sets reflect diagnostic finding that cross-ticker returns/vol block is net-negative for IC. |
 | 2 — Events + local projections | Complete | 176 FOMC events, Bauer-Swanson MPS_ORTH surprises, COT with Friday-close lag. Headline result: hawkish-FOMC IRF -1.5% on gold at h=5, sign-consistent across Au/Ag/Pt. |
-| 3 — Text + clustering | Pipeline runnable on the Linux/A6000 server; topic prevalences populated; daily aggregate + clustering still to run at full scale | GDELT backfill = 63.3M rows (2020-2026). Stages rewritten to stream one month at a time (no OOM). Topic prevalences now **themes-via-SQL** (full corpus in ~8s) writing `daily_topic_prevalence`; BERTopic kept as optional sample-bounded path. `aggregate` encodes on the fly (no 48GB cache). Fixed the dropped-`document_identifier` crash; `scripts/phase3_smoke.py` bind-checks stages. |
+| 3 — Text + clustering | **Complete (merged to main 2026-07-11, PR #1)** — 139.9M-row GDELT corpus (2015-2026, titles backfilled), Option C tone+themes clustering, Opus-labelled 7-cluster taxonomy, pre-registered cluster-lift experiment | Lift readout: NO predictive lift at the primary target (GC=F h=5 rvol): rel ΔRMSE -0.37% vs -1.0% bar, 4/11 wins. Embedding gate (assessment §7) closed. Full narrative in results/phase3_writeup.md. |
 | 4 — Multimodal transformer | Not started | Unblocked once Phase 3 lands clusters and topic prevalences. |
-| 5 — Causal ML + triangulation | Not started | Unblocked now against Phase 2 IRFs; folds in Phase 3 cluster scenarios later. |
+| 5 — Causal ML + triangulation | In progress — causal scaffolding (5.1-5.4) built | `configs/scenarios.yaml` registry + `features.scenarios` treatment builder + `models.causal` (DoubleML ATE / placebo / CATE) + 3 read loaders + 27 tests. SVAR (5.5, Bayesian NIW bands) + triangulation (5.6-5.9) next. |
 | 6 — Validation and writeup | Not started | Needs hold-out year frozen. |
 
-**Cumulative test count: 227 (all pass). The 2 previously-skipped UMAP/HDBSCAN/BERTopic tests now run because those deps are installed in the server venv.**
+**Cumulative test count: 282 — all pass (post Phase 5 scaffolding integration, 2026-07-11).**
