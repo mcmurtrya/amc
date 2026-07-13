@@ -1,0 +1,74 @@
+[
+ {
+  "title": "FOMC Member Bowman Speaks",
+  "country": "USD",
+  "date": "2026-07-13T05:25:00-04:00",
+  "impact": "Low",
+  "forecast": "",
+  "previous": ""
+ },
+ {
+  "title": "Federal Budget Balance",
+  "country": "USD",
+  "date": "2026-07-13T14:00:00-04:00",
+  "impact": "Low",
+  "forecast": "-132.8B",
+  "previous": "-292.6B"
+ },
+ {
+  "title": "BOE Gov Bailey Speaks",
+  "country": "GBP",
+  "date": "2026-07-14T04:45:00-04:00",
+  "impact": "High",
+  "forecast": "",
+  "previous": ""
+ },
+ {
+  "title": "ADP Weekly Employment Change",
+  "country": "USD",
+  "date": "2026-07-14T08:15:00-04:00",
+  "impact": "Low",
+  "forecast": "",
+  "previous": "21.0K"
+ },
+ {
+  "title": "Core CPI m/m",
+  "country": "USD",
+  "date": "2026-07-14T08:30:00-04:00",
+  "impact": "High",
+  "forecast": "0.2%",
+  "previous": "0.2%"
+ },
+ {
+  "title": "Core CPI y/y",
+  "country": "USD",
+  "date": "2026-07-14T08:30:00-04:00",
+  "impact": "High",
+  "forecast": "2.8%",
+  "previous": "2.9%"
+ },
+ {
+  "title": "CPI m/m",
+  "country": "USD",
+  "date": "2026-07-14T08:30:00-04:00",
+  "impact": "High",
+  "forecast": "-0.1%",
+  "previous": "0.5%"
+ },
+ {
+  "title": "CPI y/y",
+  "country": "USD",
+  "date": "2026-07-14T08:30:00-04:00",
+  "impact": "High",
+  "forecast": "3.8%",
+  "previous": "4.2%"
+ },
+ {
+  "title": "Final CPI y/y",
+  "country": "EUR",
+  "date": "2026-07-17T05:00:00-04:00",
+  "impact": "Low",
+  "forecast": "2.8%",
+  "previous": "2.8%"
+ }
+]

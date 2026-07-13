@@ -1,0 +1,66 @@
+[
+ {
+  "title": "Unemployment Rate",
+  "country": "JPY",
+  "date": "2026-06-29T19:30:00-04:00",
+  "impact": "Low",
+  "forecast": "2.5%",
+  "previous": "2.5%"
+ },
+ {
+  "title": "ADP Non-Farm Employment Change",
+  "country": "USD",
+  "date": "2026-07-01T08:15:00-04:00",
+  "impact": "Medium",
+  "forecast": "118K",
+  "previous": "122K"
+ },
+ {
+  "title": "Unemployment Rate",
+  "country": "EUR",
+  "date": "2026-07-02T05:00:00-04:00",
+  "impact": "Low",
+  "forecast": "6.3%",
+  "previous": "6.3%"
+ },
+ {
+  "title": "Average Hourly Earnings m/m",
+  "country": "USD",
+  "date": "2026-07-02T08:30:00-04:00",
+  "impact": "High",
+  "forecast": "0.3%",
+  "previous": "0.3%"
+ },
+ {
+  "title": "Non-Farm Employment Change",
+  "country": "USD",
+  "date": "2026-07-02T08:30:00-04:00",
+  "impact": "High",
+  "forecast": "114K",
+  "previous": "172K"
+ },
+ {
+  "title": "Unemployment Rate",
+  "country": "USD",
+  "date": "2026-07-02T08:30:00-04:00",
+  "impact": "High",
+  "forecast": "4.3%",
+  "previous": "4.3%"
+ },
+ {
+  "title": "RBA Gov Bullock Speaks",
+  "country": "AUD",
+  "date": "2026-06-28T08:15:00-04:00",
+  "impact": "Medium",
+  "forecast": "",
+  "previous": ""
+ },
+ {
+  "title": "RBA Assist Gov Kent Speaks",
+  "country": "AUD",
+  "date": "2026-06-28T19:30:00-04:00",
+  "impact": "Low",
+  "forecast": "",
+  "previous": ""
+ }
+]

@@ -64,9 +64,14 @@ backfilled. Full specification, rationale, and sequencing in
    separately) — 7.2's intraday windows are defined off these, never
    hardcoded; (b) BLS release calendars for CPI and the Employment Situation;
    (c) keep the extended surprise series (7.2) refreshed each meeting evening;
-   (d) **macro consensus capture** — scrape CPI/payrolls consensus from two
-   independent calendar sites before each 8:30 release (real-time by
-   construction, `pulled_at`-stamped) into a `macro_consensus` table;
+   (d) **macro consensus capture** — scrape CPI/payrolls consensus before each
+   8:30 release (real-time by construction, `pulled_at`-stamped) into a
+   `macro_consensus` table. Descoped 2026-07-12 from "two independent sites"
+   to the one free machine-readable feed verified to exist (ForexFactory
+   JSON — Trading Economics guest API discontinued, FXStreet auth-gated,
+   myfxbook trailing-only): the table keys on `consensus_source`, so a second
+   feed slots in whenever one appears — re-check yearly. Feed never publishes
+   actuals — first prints come from ALFRED in 7.8;
    historical reconstruction admitted only where a pre-release Wayback capture
    proves provenance (expect ~30–50 of ~193 prints; the rest stay second-class
    under the 7.7 purchased-history gate).

@@ -1,0 +1,16 @@
+# Phase 7.1 collector 3: fixed Google Trends term set.
+# The term set is FROZEN by design: changing it breaks series continuity
+# (Trends rescales per request, so every term's history is only comparable
+# within an identical request). Add terms only as a new named group with its
+# own start date; never edit an existing group.
+
+groups:
+  - name: sell_side_v1
+    geo: US
+    timeframe: "today 5-y"   # rolling window, weekly resolution
+    terms:
+      - "sell gold"
+      - "cash for gold"
+      - "gold price"
+      - "sell silver"
+      - "coin shop near me"

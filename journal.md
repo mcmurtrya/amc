@@ -1730,3 +1730,68 @@ work lives in `results/figures/` (plus `results/amc_findings_dashboard.html`).
   power (CATE toward confirmatory), intraday identification (Phase 5 wishlist
   item 6), and the supply axis. Roadmap + CLAUDE.md refs updated (seven
   collectors).
+
+---
+
+## 2026-07-13 — Phase 7.1 collectors built, tested, and LIVE
+
+- **All seven collectors implemented in one session** (8-agent parallel build
+  → full gate → 2-lens review → 6-agent fix pass → live runs). Migrations
+  008 (AMC ledger: `amc_scrap_lots`/`amc_coin_trades`/`amc_till_daily`) and
+  009 (`coin_premiums`, `search_interest`, `cme_daily`, `pgm_prices`,
+  `macro_consensus`) applied to the corpus DB. Modules follow the house
+  fetch→upsert→refresh→main pattern; every capture row carries
+  `source`/`pulled_at`/`is_realtime`, and upserts can never demote a
+  real-time flag (realtime rows also keep first-capture `pulled_at`).
+  `scripts/run_collectors.py` is the cron entry point (per-collector fault
+  isolation, state file, `--check-gaps` staleness audit consulting BOTH table
+  timestamps and last-success state so zero-row weeks don't false-alarm).
+- **Live from day one** (all into the real DB): JM PGM backfill **169,920
+  rows, 1992-07-01 → present** — rhodium/iridium/ruthenium now priced in the
+  stack (retro-flagged; 190 forward rows realtime); coin-premium panel first
+  snapshot (12 rows, 6 products × 2 dealers; silver asks ~+20.7% over melt);
+  Trends archive seeded (1,310 as-pulled weekly rows, setup history
+  flagged non-realtime); **2026-07-14 CPI consensus captured pre-release**
+  (3 rows, is_realtime=true — clean-capture from the first week); FOMC
+  calendar extended through 2026 with per-meeting release times (177 events);
+  BLS CPI/EMPSIT calendars loaded (275 events, 2015+, Wayback-verified,
+  fall-2025 shutdown handled honestly).
+- **CME collector is code-complete but not yet live**: cmegroup.com blocks
+  this sandbox's IP outright; endpoints verified via archive captures (incl.
+  the trap that the Settlements endpoint's per-month OI is the PRIOR day's
+  final — volume/OI come only from the Volume endpoint). First pull must run
+  from the laptop's own connection: `uv run python -m metals.data.cme_daily`
+  evening + next morning, then `--check-gaps`. The TradeDate endpoint only
+  serves ~5 recent days — miss a week and it's gone (Databento is the
+  historical leg regardless).
+- **Review pass caught real bugs before they shipped**: JSON-LD LIFO
+  traversal returning a related product's price (now order-preserving +
+  SchemaDriftError on disagreeing duplicates); ledger till importer clobbering
+  same-date-different-spelling rows (now parsed-PK dedupe); inf accepted as a
+  weight; jm_pgm stamping gap-fills realtime (now per-row lag rule);
+  check-gaps false-alarming on legitimately-idle consensus weeks. Post-fix:
+  the JM historical pull surfaced a real vendor defect (13/06/2014 HK-open
+  drops the platinum FIELD, shifting columns) — the strict parser refused to
+  mis-assign; resolution: skip-loudly with a 1% schema-drift ceiling
+  (1 bad row in ~34k).
+- **Gate: 482 tests pass** (was 255 pre-session), ruff format+check clean,
+  mypy reduced to 8 pre-existing errors (was the accepted-41 baseline; new
+  overrides for pandas/yaml/scipy/statsmodels/sklearn follow the house
+  pattern; the 8 live in Phase 3 modules — a 6.11 cleanup item). New deps:
+  beautifulsoup4, lxml. Migrations comment `;` sharp edge respected after
+  review caught three violations in 009.
+- **Caveats logged**: JM Bullion buyback bid unobtainable without a
+  browser-TLS fetch path (curl_cffi — user decision); APMEX publishes no
+  buyback; ask basis is single-unit card price (~4% above cash); ForexFactory
+  is the single consensus source (TE guest API discontinued, FXStreet
+  auth-gated) and never publishes actuals — ALFRED covers first prints in
+  7.8; consensus plan text descoped accordingly.
+- **User actions to go live fully**: (1) run the CME collector once from the
+  laptop's own network + re-check robots.txt/ToS posture from there;
+  (2) schedule `run_collectors.py` daily + `--check-gaps` alert (weekly for
+  trends/jm_pgm via --only, or accept idempotent daily runs); (3) agree the
+  ledger export format with the bookkeeping side (configs/templates/*.csv is
+  the contract; exports land in data/raw/amc_ledger/, never in git);
+  (4) the off-site DB backup is now URGENT — the corpus holds irreplaceable
+  captured rows as of today; (5) Databento signup + backfill and the
+  Greysheet subscription remain the paid-sprint items.

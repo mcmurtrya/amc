@@ -1,0 +1,13 @@
+release_date,release_time_et,release_type,reference_period,notes
+2024-12-06,08:30,EMPSIT,2024-11,
+2024-12-11,08:30,CPI,2024-11,
+2025-09-11,08:30,CPI,2025-08,
+2025-10-24,08:30,CPI,2025-09,delayed by government shutdown; originally scheduled 2025-10-15
+2025-11-20,08:30,EMPSIT,2025-09,delayed by government shutdown; originally scheduled 2025-10-03
+2025-12-16,08:30,EMPSIT,2025-11,originally scheduled 2025-12-05; includes October payrolls; no standalone October 2025 report (shutdown)
+2025-12-18,08:30,CPI,2025-11,originally scheduled 2025-12-10; no October 2025 CPI was published (shutdown)
+2026-01-09,08:30,EMPSIT,2025-12,
+2026-01-13,08:30,CPI,2025-12,
+2026-07-14,08:30,CPI,2026-06,
+2026-12-04,08:30,EMPSIT,2026-11,
+2026-12-10,08:30,CPI,2026-11,

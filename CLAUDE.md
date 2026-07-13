@@ -47,6 +47,7 @@ uv run ruff check src tests                           # lint (line length 100)
 uv run ruff format src tests                          # format
 uv run mypy                                           # type-check (src/metals only)
 uv run python -m metals.data.migrations.runner        # apply DB migrations
+uv run python scripts/run_collectors.py               # Phase 7.1 collectors (--check-gaps: staleness audit)
 ```
 
 Run lint, format, mypy, and the relevant tests before considering a change done
@@ -61,7 +62,11 @@ everything; all DB I/O goes through `data/db.py`.
 - **`data/`** — ingestion, one module per source: `prices.py` (Yahoo OHLCV),
   `fred.py` (macro), `cot.py` (CFTC positioning), `fomc_surprises.py`, `gpr.py`
   (geopolitical risk), `gdelt.py` (GKG news via BigQuery → the ~63M-row `headlines`
-  table that dominates the DB). Schema changes live in `migrations/` (apply via
+  table that dominates the DB). Phase 7.1 collectors (2026-07-12): `amc_ledger.py`
+  (local-only importer for AMC's books), `coin_premiums.py`, `trends.py`,
+  `cme_daily.py`, `jm_pgm.py`, `consensus.py`, `bls_calendar.py` — scheduled via
+  `scripts/run_collectors.py`, append-only with `pulled_at`/`is_realtime` honesty
+  flags (never demoted on upsert). Schema changes live in `migrations/` (apply via
   `runner.py`).
 - **`features/`** — `returns.py`/`macro.py`/`spreads.py` build features; `assemble.py`
   + `loaders.py` turn DuckDB tables into wide ML matrices; `leakage.py` is the
@@ -99,7 +104,7 @@ a CUDA 12.4 image); CPU runs are slow.
   resolved by renaming the artifacts migration to `006_phase3_artifacts.sql`
   (2026-07-02); DBs that ran it under the old stem keep a stale
   `005_phase3_artifacts` row and re-run the renamed file as a no-op (it is fully
-  `IF NOT EXISTS`). Next free number: `008`. Never put a `;` inside a migration
+  `IF NOT EXISTS`). Next free number: `010`. Never put a `;` inside a migration
   comment — whole-file execution silently truncates at it.
 - **GDELT corpus limits** are documented in
   `results/phase3_gdelt_data_assessment.md` — read it before doing anything with text

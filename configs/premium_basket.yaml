@@ -1,0 +1,124 @@
+# Retail coin-premium panel basket (Phase 7.1, collector 2 — metals.data.coin_premiums).
+#
+# Fixed benchmark basket scraped once daily from two large online dealers. The
+# panel's value is an unbroken like-for-like series: do not casually swap
+# products or URLs. All product URLs verified live 2026-07-12 (dealer pages in
+# the current search index, cross-checked against Internet Archive snapshots
+# from 2025-12 .. 2026-05).
+#
+# Robots / terms check (2026-07-12):
+#   apmex.com/robots.txt         — product pages allowed (only /product/reviews/
+#                                  plus cart/account/search paths disallowed).
+#   jmbullion.com/robots.txt     — only /go/ and /wp-admin/ disallowed.
+#   amp.jmbullion.com/robots.txt — "User-agent: * / Allow: /".
+# Neither dealer disallows product-page fetching, so both are collected
+# (disallowed: false below). If a dealer's robots or terms change, set
+# disallowed: true — the collector then skips it loudly.
+#
+# Price basis: ask_usd is the schema.org JSON-LD Product -> offers.price, which
+# at both dealers is the single-unit (qty 1-9) credit-card price — the one basis
+# extractable identically from both sites. Cash/wire prices run ~4% lower;
+# levels are therefore card-basis, but the series is internally consistent.
+#
+# Buyback bid: APMEX publishes no buyback price on product pages (bid NULL).
+# JM Bullion's www product pages embed the "Sell to Us" bid ("buybackPrice" in
+# the Next.js flight payload) but 403 every non-browser TLS client — verified
+# 2026-07-12 with both the honest research UA and full browser headers from a
+# residential IP. The AMP mirror (amp.jmbullion.com, same slugs) serves the
+# identical JSON-LD ask to the honest UA, so the panel collects AMP pages; on
+# AMP the buyback quote is client-rendered from a bot-protected wp-json
+# endpoint, so jmbullion bid is NULL for now. The parser's buyback_payload
+# support is tested against a real www capture and ready: to capture bids,
+# provision a browser-fingerprint fetch path, point the jmbullion urls at
+# https://www.jmbullion.com/<same slug>/, and set bid_source: buyback_payload.
+#
+# Melt basis: fine_troy_oz is the fine metal content of ONE purchase unit.
+# For 90% junk silver the unit is a $100 face-value bag and the basis is
+# encoded explicitly per face-value dollar:
+#   fine_troy_oz = face_value_usd * fine_troy_oz_per_face_dollar
+#                = 100 * 0.715 = 71.5 ozt
+# (0.715 ozt per $1 face is the standard circulated-junk convention; both
+# dealers quote the same ~71.5 ozt content for their $100 bags.)
+
+spot_tickers: # yfinance front-month futures, spot proxy at capture
+  gold: GC=F
+  silver: SI=F
+
+dealers:
+  apmex:
+    display_name: APMEX
+    robots_checked: "2026-07-12"
+    disallowed: false
+    parse:
+      ask_source: json_ld # schema.org Product -> offers.price
+      ask_css: null # no stable CSS hook verified; repair lever after redesigns
+      bid_source: null # APMEX publishes no buyback bid on product pages
+    notes: >
+      Product pages sit behind bot-protection that 403s non-browser TLS
+      fingerprints (curl and cloud fetchers blocked even on a residential IP).
+      The collector identifies itself honestly and fails loudly if blocked.
+  jmbullion:
+    display_name: JM Bullion
+    robots_checked: "2026-07-12"
+    disallowed: false
+    parse:
+      ask_source: json_ld # schema.org Product -> offers.price
+      ask_css: null
+      bid_source: null # AMP pages render the buyback client-side; see header note
+    notes: >
+      Collected via the AMP mirror (amp.jmbullion.com) — the www storefront
+      403s non-browser TLS clients. Same-slug AMP pages serve the identical
+      server-rendered JSON-LD Product block (all six verified live
+      2026-07-12). Switch to www urls + bid_source: buyback_payload once a
+      browser-fingerprint fetch path exists (parser support ready).
+
+products:
+  - product_id: gold_eagle_1oz_random
+    name: 1 oz American Gold Eagle, BU (random year)
+    metal: gold
+    fine_troy_oz: 1.0 # 1.0000 ozt fine gold (22k coin, 1.0909 ozt gross)
+    urls:
+      apmex: https://www.apmex.com/product/1/1-oz-american-gold-eagle-coin-bu-random-year
+      jmbullion: https://amp.jmbullion.com/1-oz-american-gold-eagle/
+
+  - product_id: silver_eagle_1oz_random
+    name: 1 oz American Silver Eagle, BU (random year)
+    metal: silver
+    fine_troy_oz: 1.0
+    urls:
+      apmex: https://www.apmex.com/product/23331/1-oz-american-silver-eagle-coin-bu-random-year
+      jmbullion: https://amp.jmbullion.com/american-silver-eagle-varied-year/
+
+  - product_id: gold_maple_1oz_random
+    name: 1 oz Canadian Gold Maple Leaf, .9999 BU (random year)
+    metal: gold
+    fine_troy_oz: 1.0
+    urls:
+      apmex: https://www.apmex.com/product/9/canada-1-oz-gold-maple-leaf-9999-fine-bu-random-year
+      jmbullion: https://amp.jmbullion.com/1-oz-canadian-gold-maple-leaf/
+
+  - product_id: junk_silver_90pct_100fv
+    name: 90% junk silver, $100 face value bag (dimes/quarters, circulated)
+    metal: silver
+    face_value_usd: 100
+    fine_troy_oz_per_face_dollar: 0.715
+    fine_troy_oz: 71.5 # = 100 * 0.715; validated by load_basket()
+    urls:
+      apmex: https://www.apmex.com/product/27/90-silver-coins-100-face-value-bag
+      jmbullion: https://amp.jmbullion.com/90-silver-coins-100-face-value/
+
+  - product_id: silver_round_1oz_generic
+    name: 1 oz silver round, generic / secondary market (any mint)
+    metal: silver
+    fine_troy_oz: 1.0
+    urls:
+      apmex: https://www.apmex.com/product/23/1-oz-silver-round-secondary-market
+      jmbullion: https://amp.jmbullion.com/1-oz-silver-round/
+
+  - product_id: gold_bar_1oz_generic
+    name: 1 oz gold bar, generic / secondary market (any mint)
+    metal: gold
+    fine_troy_oz: 1.0
+    urls:
+      apmex: https://www.apmex.com/product/6894/1-oz-gold-bar-secondary-market
+      jmbullion: https://amp.jmbullion.com/1-oz-gold-bar/
