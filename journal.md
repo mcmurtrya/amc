@@ -1795,3 +1795,48 @@ work lives in `results/figures/` (plus `results/amc_findings_dashboard.html`).
   (4) the off-site DB backup is now URGENT — the corpus holds irreplaceable
   captured rows as of today; (5) Databento signup + backfill and the
   Greysheet subscription remain the paid-sprint items.
+
+---
+
+## 2026-07-15 — Scheduling + backup wired (collectors stop bleeding)
+
+- **Problem found first:** `--check-gaps` showed the seven collectors had run
+  once on build day (2026-07-13) and never since — they were *live but not
+  scheduled*. coin_premiums + consensus (daily cadence) were already 2.7d stale,
+  silently dropping non-backfillable daily captures. cme_daily still never
+  written (sandbox IP block, unchanged — needs the laptop's own network).
+- **Scheduling — `scripts/install_schedule.sh`** generates four user-systemd
+  units (paths + `uv` baked in, `WorkingDirectory=<repo>` so `load_dotenv()`
+  and the `__file__`-anchored DB path resolve). Chose systemd `--user` over
+  cron (cron on WSL2 is unreliable; systemd is the wsl.conf init here).
+  `loginctl enable-linger mcmur` set so timers fire without an interactive
+  login. All timers `Persistent=true` → a run missed while the laptop was off
+  fires on next boot. Timers: collectors-daily 03:30 (`--skip trends,jm_pgm`,
+  then `--check-gaps` as ExecStartPost so staleness shows as a failed unit);
+  collectors-weekly Mon 03:40 (`--only trends,jm_pgm`, matching the 7d
+  registry cadence); backup-tables 04:00 daily; backup-full Sun 04:15.
+  `--uninstall` / `--status` provided. Installer is idempotent.
+- **Backup — `scripts/backup_db.py`**, two legs matched to the data's shape
+  (54 GB = static `headlines`, already on the Windows copy; the irreplaceable
+  part is KB of daily captures + the local-only ledger):
+  - `--tables` (daily): read-only connection, `COPY … TO parquet` for the seven
+    capture tables + three `amc_*` ledger tables → `<dest>/snapshots/<UTC>/`
+    with a row-count MANIFEST, written to a `.partial` dir then renamed. Prunes
+    to 14. **Ran for real:** 10 tables / 172,051 rows → `/mnt/c/.../amc-backups`,
+    ledger included, exit 0; re-ran via `systemctl --user start` to prove the
+    unit env (uv, WorkingDirectory, .env) works → Result=success.
+  - `--full` (weekly): disk-space precheck, acquire the single writer lock
+    (retry around brief collector runs), `CHECKPOINT` to fold the WAL, copy the
+    file *while holding the lock* (no writer can intervene), temp-on-dest then
+    atomic `os.replace`. Prunes to 4. First run is Sunday 04:15 (not run now to
+    avoid a redundant 54 GB copy).
+- **Destination decision (user):** `/mnt/c` (same laptop), ledger INCLUDED,
+  split cadence. Honest limitation logged: `/mnt/c` survives WSL VM/disk
+  corruption and accidental `rm`, **not** physical drive failure / theft /
+  fire. True off-site (external drive or cloud-via-rclone, ledger excluded)
+  still wanted — `backup_db.py --dest … --exclude-ledger` already supports it.
+- **Gate:** `ruff format` + `ruff check` clean on `backup_db.py`. No test file
+  added (scripts/ is outside the enforced suite; both scripts verified by
+  running). Still open, unchanged: CME first pull from the laptop network;
+  ledger export-format contract with bookkeeping; Databento + Greysheet paid
+  sprint; Phase 6.10/6.11 + v1.0 tag.
