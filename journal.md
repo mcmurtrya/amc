@@ -24,7 +24,45 @@ A running log of work, learnings, surprises, and open questions. Add an entry at
     drop and recreate the index around it. DuckDB also does not shrink the data
     file in place on DROP COLUMN — rebuild a fresh DB to reclaim bytes.
   - `runs` / `run_predictions` are created lazily by the harness, not by a
-    migration; rebuilding from migrations alone loses them.
+    migration; rebuilding from migrations alone loses them. Export them to
+    Parquet (`scripts/export_harness.py`) so the run records travel with the repo.
+- **Research method (Phases 5-6)**
+  - In honest out-of-sample evaluation, classical baselines (GARCH(1,1), VAR)
+    beat the ML models, and the regime / sentiment / neural-embedding features
+    *hurt* OOS (Phase 6, 63-day hold-out). The shipped repro is Option C
+    (tone/theme text, no embeddings) for exactly this reason. Financial-ML lift
+    from flexible features is usually a look-ahead artifact — treat a big number
+    with suspicion, not celebration.
+  - Text/embeddings gave *no* predictive lift at the primary target (Phase 3
+    pre-registered null: rel ΔRMSE -0.37% vs a -1.0% bar). Pre-registering the
+    win condition before looking is what let the null be reported as a result.
+  - Triangulation is the strongest evidence: a scenario that shows the same sign
+    and rough magnitude under local projections, DoubleML, *and* a sign-restricted
+    SVAR (hawkish FOMC → gold −1.4% at h=5) is far more trustworthy than any one
+    method. Where methods disagreed (GPR, DXY-down), the finding failed robustness.
+  - Freeze scenario definitions in the registry *before* estimation (price-blind
+    inclusion rules). The moment "days X moved" leaks into the event list, the
+    effect is mechanical.
+- **Data acquisition & Terms of Use (Phase 7)**
+  - A vendor's error text is a *claim, not a diagnosis*. CME's 403 body said "IP
+    blocked"; a two-client experiment (plain vs browser-TLS, same IP, seconds
+    apart) proved it was a TLS-fingerprint block. The cheap experiment settles in
+    a minute what a recorded assumption propagates for days.
+  - Check a source's ToU for AMC's *actual* use before building a collector.
+    Commercial-use, model-training, and cached-dataset/database clauses routinely
+    bar uses that robots.txt would permit — and robots.txt is an exclusion
+    protocol that cannot grant. Publicly visible ≠ licensed; dropping the
+    automation does not cure a commercial-use bar; a 403/CAPTCHA is the operator
+    answering — never defeat it by misrepresenting the client (TLS/UA
+    impersonation). Plan §7.7 carries the gate.
+  - Non-backfillable vs backfillable is the classification that sets urgency, so
+    get it right: CME open interest was wrongly filed non-backfillable (Databento
+    retains it permanently), which manufactured false urgency and drove the
+    impersonation attempt. The genuinely non-backfillable series (coin premiums,
+    search interest, the ledger) are the ones a missed day loses forever.
+  - Keep honesty on the row: `is_realtime` never demoted, `pulled_at` provenance,
+    and `quarantine_reason` (barred-source rows) — downstream loaders must filter
+    `quarantine_reason IS NULL`.
 
 ---
 
@@ -2121,3 +2159,50 @@ is rewritten as a manual importer of Google's `multiTimeline.csv` export, mirror
   added (weekly w/ BOM + `<1`, and a monthly variant).
 - ruff check + format clean. mypy unchanged at the accepted 8 pre-existing errors
   (none in the new code). Migrations `010`+`011` applied; next free number `012`.
+
+---
+
+## 2026-07-16 (later still) — Phase 6 close-out: mypy 0, repro entry points, v1.0
+
+Turned from the ToU remediation to finishing Phase 6 so the repo can carry a
+clean v1.0 tag (roadmap sequences this before heavy 7.3+ modelling). Committed on
+branch `phase7-tou-remediation` (three sessions of work were uncommitted on main;
+pushed to origin first to get it off the single ext4 disk).
+
+- **6.11 mypy 8 → 0.** Three annotation-only root causes, no runtime change:
+  clustering.py `umap_model`/`hdbscan_model` `object` → `Any` (also cleared
+  regimes.py via the shared pipeline field); gdelt.py `out_summary` →
+  `dict[str, Any]`; embeddings.py `resolve_cache_dir(env)` → `Mapping[str,str]|None`.
+- **6.10 repro entry points (all three built + tested):**
+  - `scripts/export_harness.py` — exports the three lazily-created harness tables
+    (runs 54, run_predictions 94,713, run_feature_importances 119,330) to ZSTD
+    Parquet (~1.25 MB) + `--load` round-trip; `.gitignore` negation commits them.
+    These are lost on a migrations-only rebuild, so they now travel with the repo.
+  - `metals.refresh` — ToU-aware orchestrator of the 7 licence-clean Phases 0-6
+    sources (gdelt opt-in/billed); refuses the barred Phase 7.1 collectors with a
+    pointer. Per-source failure isolation.
+  - `metals.train` — dependency-ordered subprocess orchestrator (phase1 → phase3
+    Option C → phase5 → phase6); CPU `--all` default, GPU embed behind `--with-gpu`
+    (refuses fast if no CUDA), stops on first failure. Preflight gates on an empty DB.
+  - README "Reproducing the results" section; **weights decision documented: ship
+    none** — models are seed-pinned and cheap to refit, so `metals.train`
+    regenerates them; only the harness records + scenario master table (both
+    irreplaceable) travel with the repo, versions frozen in `uv.lock`.
+- **6.11 dead-code / `_archive` review: nothing to move.** The 5 Phase 1/2
+  notebooks are referenced provenance (Phase 0/1/2 write-ups link them) in their
+  conventional `notebooks/` home, not dead code; Phase 4 was deferred before any
+  transformer code was written; no stray `__pycache__`/`.pyc` is tracked. Forcing
+  an `_archive/` would be cargo-culting the checklist — documented instead.
+- **6.11 journal lessons refreshed** — added Phase 5-6 (classical beats ML OOS;
+  text null; triangulation; pre-registration) and Phase 7 (error-text-is-not-
+  diagnosis; ToU-before-building; backfillable-vs-not sets urgency; row honesty
+  flags) clusters. CLAUDE.md journal-size note un-staled.
+- **Gate:** mypy clean (0, was 8); ruff check + format clean; new tests: 8
+  refresh + 11 train + harness round-trip verified by running. Full suite green
+  as of the last full run (488) plus the 19 new orchestrator tests.
+
+Remaining before the tag: run the full suite once more, then `git tag v1.0` on
+this branch's HEAD with a message noting Phases 0-6 complete + Phase 7.1 data
+program in progress (barred/paused collectors, documented). The human-action
+critical path (licence emails, ledger conversation, first Trends export) is
+unchanged and still only the user's to take.

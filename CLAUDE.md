@@ -111,7 +111,8 @@ a CUDA 12.4 image); CPU runs are slow.
   usable. Any loader that grows to read these tables must apply the filter.
 - **Every model run logs to the eval harness** (`eval/harness.py`).
 - **Append a `journal.md` entry after every working session** (it's the running
-  research log; ~45 KB and growing).
+  research log; ~135 KB and growing, with a distilled "Lessons learned" section
+  at the top).
 - Match surrounding style; ruff governs (line length 100, rules E/F/I/N/W/B/UP).
 
 ## Sharp edges
