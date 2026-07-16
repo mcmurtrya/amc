@@ -56,6 +56,48 @@ Every subsequent `uv` command in the session inherits the variable, so the same
 project-local venv is reused. Do **not** set this user-scoped — that breaks
 other projects.
 
+## Reproducing the results
+
+Three entry points rebuild the research from a clean checkout. All model steps are
+seed-pinned, so a rerun reproduces the published numbers.
+
+```bash
+# 1. Rebuild the Phases 0-6 research inputs (idempotent; per-source failure isolation).
+#    The 7 core sources are seconds-to-minutes and need at most FRED_API_KEY.
+uv run python -m metals.refresh
+#    GDELT (the ~63M-row text corpus) is opt-in: a billed TB-scale BigQuery scan
+#    that needs GOOGLE_APPLICATION_CREDENTIALS and an explicit window.
+uv run python -m metals.refresh --gdelt --start 2015-01-01 --end 2026-06-30
+
+# 2. Retrain the models in dependency order (Phase 1 -> 3 -> 5 -> 6).
+uv run python -m metals.train --dry-run    # show the ordered plan + gate decisions
+uv run python -m metals.train --all        # CPU steps: the Option-C pipeline Phase 6 validated
+
+# 3. Export / re-import the eval-harness run records (they ship as Parquet, not the 54 GB DB).
+uv run python scripts/export_harness.py            # -> results/harness_export/
+uv run python scripts/export_harness.py --load     # re-import into a fresh DB
+```
+
+**No model weights are shipped, by design.** The models are cheap and deterministic
+to refit — LightGBM (seed-pinned), the DoubleML/SVAR estimators (`random_state`/
+`seed=42`), and the UMAP+HDBSCAN clustering (`random_state=42`) all regenerate from
+the seed-pinned configs in seconds to minutes, so `metals.train` reproduces them
+rather than loading a checkpoint. What *is* irreplaceable travels with the repo: the
+eval-harness records (`results/harness_export/*.parquet`, re-derivable only by
+re-running every model) and the scenario master table (`results/phase5_scenario_master.csv`).
+Exact dependency versions are frozen in the tracked `uv.lock`.
+
+**GPU note.** The reproduced pipeline is *Option C* throughout — tone/theme text
+features, no neural embeddings — which is exactly what Phase 6 found best out of
+sample (embeddings and regime/sentiment features hurt OOS). So `metals.train --all`
+is complete on a CPU box. The neural embedding stage runs only under `--with-gpu`
+on a machine with CUDA and is exploratory, not part of the shipped result.
+
+**The Phase 7.1 AMC collectors are not part of this reproduction.** They capture
+live business data, are separately governed (`scripts/run_collectors.py`,
+`plans/phase_7_amc_program.md` §7.7), and — following the 2026-07-16 Terms-of-Use
+audit — are mostly barred or manual; `metals.refresh` refuses them with a pointer.
+
 ## Maintenance
 
 ### Reclaiming database space
@@ -93,7 +135,8 @@ amc/
 ├── notebooks/       # exploratory only
 ├── configs/         # YAML run configs
 ├── plans/           # phased research plan
-├── results/         # write-ups and outputs
+├── results/         # write-ups and outputs (incl. harness_export/ Parquet)
+├── licensing/       # data-source licence-request drafts (Phase 7.1 ToU)
 ├── tests/
 ├── journal.md       # research log (append after every session)
 └── pyproject.toml
