@@ -13,6 +13,11 @@ data/features/*
 
 # Parquet
 *.parquet
+# ...except the exported eval-harness records: irreplaceable (re-deriving them
+# means re-running every model), tiny (~1.3 MB ZSTD), and lost on a
+# migrations-only rebuild since runs/run_predictions are created lazily. See
+# scripts/export_harness.py and Phase 6.10.
+!results/harness_export/*.parquet
 
 # Environment
 .env

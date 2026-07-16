@@ -1,0 +1,14 @@
+{
+  "exported_at_utc": "2026-07-16T16:39:48.454208+00:00",
+  "source_git_hash": "3cb09ac8ef660d8db2d4f39521b836d6a2d0d721",
+  "row_counts": {
+    "runs": 54,
+    "run_predictions": 94713,
+    "run_feature_importances": 119330
+  },
+  "tables": [
+    "runs",
+    "run_predictions",
+    "run_feature_importances"
+  ]
+}
