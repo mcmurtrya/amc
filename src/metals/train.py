@@ -151,7 +151,8 @@ def preflight() -> list[str]:
         with connection(read_only=True) as conn:
             for table in ("prices", "macro"):
                 try:
-                    n = conn.execute(f"SELECT count(*) FROM {table}").fetchone()[0]
+                    row = conn.execute(f"SELECT count(*) FROM {table}").fetchone()
+                    n = row[0] if row else 0
                 except Exception:
                     n = 0
                 if not n:
