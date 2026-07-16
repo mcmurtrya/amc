@@ -43,7 +43,7 @@ import os
 import sys
 import warnings
 from collections import OrderedDict
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -85,7 +85,7 @@ def _warn_if_synced(path: Path) -> Path:
     return path
 
 
-def resolve_cache_dir(env: dict | None = None) -> Path:
+def resolve_cache_dir(env: Mapping[str, str] | None = None) -> Path:
     """Resolve the embeddings cache directory.
 
     Priority:

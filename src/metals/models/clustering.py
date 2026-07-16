@@ -16,6 +16,7 @@ import pickle
 from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -44,8 +45,10 @@ class ClusterPipeline:
     """Bundle of fitted UMAP, HDBSCAN, training mean/std, and metadata."""
 
     config: ClusteringConfig
-    umap_model: object
-    hdbscan_model: object
+    # UMAP / HDBSCAN have no usable static types; Any lets .transform()/.labels_
+    # resolve while the pickled models carry their real runtime types.
+    umap_model: Any
+    hdbscan_model: Any
     feature_mean: np.ndarray
     feature_std: np.ndarray
     feature_names: list[str]

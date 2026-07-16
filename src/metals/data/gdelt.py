@@ -36,6 +36,7 @@ import re
 from collections.abc import Iterable
 from datetime import date
 from pathlib import Path
+from typing import Any
 
 import pandas as pd
 import yaml
@@ -335,7 +336,7 @@ def refresh(
     result-download window even on the REST fallback; with the Storage API
     enabled they're trivially fast.
     """
-    out_summary = {"chunks": [], "rows_written": 0}
+    out_summary: dict[str, Any] = {"chunks": [], "rows_written": 0}
     sd = pd.Timestamp(start_date).normalize()
     ed = pd.Timestamp(end_date).normalize()
     cur = sd
