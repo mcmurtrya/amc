@@ -116,8 +116,6 @@ def test_registry_matches_phase7_spec():
     entries = {s.name: s for s in rc.REGISTRY}
     expected = {
         "coin_premiums": ("metals.data.coin_premiums", 1, "coin_premiums"),
-        "trends": ("metals.data.trends", 7, "search_interest"),
-        "cme_daily": ("metals.data.cme_daily", 1, "cme_daily"),
         "jm_pgm": ("metals.data.jm_pgm", 7, "pgm_prices"),
         "consensus": ("metals.data.consensus", 1, "macro_consensus"),
     }
@@ -127,6 +125,24 @@ def test_registry_matches_phase7_spec():
         assert entries[name].cadence_days == cadence
         assert entries[name].table == table
         assert entries[name].timestamp_col == "pulled_at"
+
+
+def test_registry_excludes_cme_daily():
+    """cme_daily must stay unscheduled: its website source is barred by CME's Data
+    Terms of Use for AMC's use, so the nightly timer must never attempt it. The
+    series is backfillable via Databento, so nothing accrues while it is absent.
+    Re-register only once the module pulls from Databento (journal.md 2026-07-15).
+    """
+    assert "cme_daily" not in {s.name for s in rc.REGISTRY}
+
+
+def test_registry_excludes_trends():
+    """trends must stay unscheduled: Google licenses the data but only via a manual
+    CSV export, so metals.data.trends is now an operator-run importer whose refresh()
+    takes a file path and cannot be scheduled argless. Re-register only if a
+    sanctioned automated feed appears (journal.md 2026-07-16).
+    """
+    assert "trends" not in {s.name for s in rc.REGISTRY}
 
 
 # ---------------------------------------------------------------------------

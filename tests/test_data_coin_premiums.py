@@ -67,9 +67,11 @@ def test_load_basket_real_config_validates():
         assert set(product["urls"]) == {"apmex", "jmbullion"}
         assert product["urls"]["apmex"].startswith("https://www.apmex.com/product/")
         assert product["urls"]["jmbullion"].startswith("https://amp.jmbullion.com/")
-    # Neither dealer is robots-disallowed as of the 2026-07-12 check.
-    assert not cfg["dealers"]["apmex"]["disallowed"]
-    assert not cfg["dealers"]["jmbullion"]["disallowed"]
+    # Both dealers BARRED by their Terms of Use (audited 2026-07-16); the collector
+    # must skip them. Do not flip back to false without a licence — see the basket
+    # config header and journal.md 2026-07-16.
+    assert cfg["dealers"]["apmex"]["disallowed"]
+    assert cfg["dealers"]["jmbullion"]["disallowed"]
 
 
 def test_load_basket_rejects_inconsistent_face_value_basis(tmp_path):

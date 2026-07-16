@@ -12,13 +12,21 @@ spelled out on first use.
 ## Bottom line
 
 The most valuable inputs to AMC's next round of research share one property: **they
-cannot be backfilled**. Coin premiums, search interest, futures open interest, and
-AMC's own transaction records exist only if someone records them as they happen.
+cannot be backfilled**. Coin premiums, search interest, and AMC's own transaction
+records exist only if someone records them as they happen.
 Each of the five collectors below takes roughly one to three days to build; together
 they are about seven to ten working days. **Every week of delay is a week of
 irreplaceable data lost.** None of them requires any modelling to pay for itself —
 three of the five deliver useful business information from the first week of
 operation.
+
+**Correction (2026-07-15):** this note originally listed *futures open interest*
+among the non-backfillable series. That was wrong. Databento retains CME's
+`statistics` schema (settlement, open interest, cleared volume) permanently, so the
+series can be pulled retroactively at any time — see Collector 4 below. The error
+mattered: it manufactured urgency around the one collector that never needed it, and
+that urgency is what motivated an approach that turned out to violate CME's Terms of
+Use.
 
 ## About this note
 
@@ -134,14 +142,50 @@ request parameters. Effort: about one day.
 
 ## Collector 4 — Futures open-interest collector (CME)
 
-**What it is.** A daily capture of settlement volume and open interest — the number
+**What it is.** A daily record of settlement volume and open interest — the number
 of futures contracts outstanding — per metals contract (gold, silver, platinum,
-palladium) from the Chicago Mercantile Exchange's (CME's) public daily reports.
+palladium), licensed from Databento.
 
-**Why start now.** The project's free price source (Yahoo) has unreliable volume for
-platinum and palladium (roughly 40% zero readings), and *historical* daily open
-interest is paywalled — but each day's figures are public as they appear. Forward
-capture is free; hindsight is not.
+**Superseded 2026-07-15 — read this before building anything here.** The original
+design scraped CME's website. Both of its premises were wrong:
+
+- *"Forward capture is free; hindsight is not."* **False.** Databento retains the
+  `statistics` schema (settlement price, open interest, cleared volume, block volume)
+  permanently. The series is fully backfillable at any later date, so there is no
+  clock on this collector and never was.
+- *"Each day's figures are public as they appear."* **Publicly visible, but not
+  licensed for this use.** CME's Data Terms of Use prohibit using "scripts, software,
+  spiders, robots... to navigate, access... retrieve, harvest... any portion of the
+  Website" absent prior written permission, and limit access to "personal use for
+  non-commercial purposes" — expressly excluding software development, model training,
+  and the creation of "archived or cached data sets." AMC's use fails all three
+  independently, and manual download does not cure it. The Akamai block encountered
+  in build is the enforcement of Advisory Chadv23-364, effective 2024-01-08.
+
+**Why not now.** No urgency exists. Pull it when convenient.
+
+**Replacement source.** Databento `statistics` on `GLBX.MDP3`, `stype_in=parent`,
+symbols `GC.FUT,SI.FUT,PL.FUT,PA.FUT`. Roughly **$1/month** for the forward leg
+(a `StatMsg` is 64 bytes; ~27 MB/month all-in), and **no market-data licence is
+required** — Databento embargoes historical data at 24 hours precisely to stay
+outside real-time licensing. The trade-off is freshness: T+1 for settlement and
+T+2 for final open interest, versus the scrape's same-evening preliminary figures.
+Buying that day back means the live feed at roughly $900/month (GC/SI are COMEX,
+PL/PA are NYMEX — two DCMs, so non-display "Research and Analysis" licensing
+doubles), which is indefensible against a days-to-weeks inventory float.
+
+**An unintuitive benefit.** The licensed replay is *better* for this codebase than
+the live capture it replaces. `ts_recv` timestamps the exact nanosecond each
+statistic became knowable and `update_action` preserves the full revision sequence,
+so what-was-known-when reconstructs exactly. The scrape's coarse `pulled_at` was
+only ever a proxy for that.
+
+**Before funding the backfill.** GLBX.MDP3 reaches back to 2010-06-06, but
+2010-06 → 2017-05 is reconstructed from CME's legacy MDP2 feed (timestamps from
+tag 52 with `F_BAD_TS_RECV` set; pre-2015-01-20 `stat_flags` do not match the
+current spec). Whether `statistics` is *complete* across that era is unconfirmed —
+and it is the leg being paid for. Ask Data Sales before signing up, since the free
+credits expire ~6 months from signup, not from first use.
 
 **What AMC gets on day one.** Little by itself — this one is pure seed corn.
 
@@ -151,8 +195,10 @@ report, which arrives three to ten days stale) and the labels for the
 platinum/palladium liquidation alarm — open-interest contraction is the signature of
 the forced-selling episodes that hit PGM (platinum-group metals) inventory hardest.
 
-**Build notes.** Parse the CME daily bulletin or settlements pages into one table
-(per contract month plus an aggregate). Effort: about one day.
+**Build notes.** Pull Databento `statistics` into one table (per contract month plus
+a roll-neutral aggregate — per-contract open interest contracts mechanically at every
+quarterly roll). Effort: about one day. The existing `src/metals/data/cme_daily.py`
+keeps its parsing, provenance, and splice discipline; only the source changes.
 
 ## Collector 5 — Event-calendar and Fed-surprise upkeep
 

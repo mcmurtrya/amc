@@ -1,11 +1,25 @@
 """Backup for the AMC metals DuckDB store.
 
-The store is ~54 GB, but that mass is the static GDELT ``headlines`` corpus
-(already mirrored in the pre-collector Windows copy). What is *irreplaceable*
-is a few kilobytes of daily collector captures — retail coin premiums, as-pulled
-search interest, pre-release macro consensus, CME TradeDate figures that age off
-the endpoint in ~5 days, JM realtime forward rows — plus AMC's own ledger. So
-this script has two legs:
+The store is ~51 GB. Most of that mass is the static GDELT ``headlines`` corpus,
+which is *re-derivable* (a billable BigQuery re-scan plus re-applying
+``data/raw/title_backfill/*.parquet``) but is **not currently copied anywhere** —
+so the ``--full`` leg is what stands between a drive failure and rebuilding it.
+
+    CORRECTION 2026-07-15: this docstring previously claimed the corpus was
+    "already mirrored in the pre-collector Windows copy". No such copy exists —
+    the only ``*.duckdb`` under /mnt/c/Users/mcmur is a 4 KB CLI config dir. That
+    false premise is why ``--full`` was scheduled weekly and treated as optional;
+    until its first real run the corpus had no backup at all. Note the title
+    backfill parquet (7.6 GB) also lives only on the ext4 disk, so a rebuild
+    needs both legs of a re-pull, not one.
+
+What is *irreplaceable* — as opposed to merely expensive — is a few kilobytes of
+daily collector captures: retail coin premiums, as-pulled search interest
+(Trends renormalizes per request), pre-release macro consensus, JM realtime
+forward rows, plus AMC's own ledger. That data cannot be re-pulled at any price.
+(CME volume/OI was on this list until 2026-07-15; it is backfillable via
+Databento and its collector is retired — see journal.md.) So this script has two
+legs, matched to that split:
 
     --tables   Export the small append-only capture + ledger tables to a
                timestamped Parquet snapshot. Fast, safe (read-only connection),

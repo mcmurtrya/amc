@@ -6,14 +6,36 @@
 # the current search index, cross-checked against Internet Archive snapshots
 # from 2025-12 .. 2026-05).
 #
-# Robots / terms check (2026-07-12):
-#   apmex.com/robots.txt         — product pages allowed (only /product/reviews/
-#                                  plus cart/account/search paths disallowed).
-#   jmbullion.com/robots.txt     — only /go/ and /wp-admin/ disallowed.
-#   amp.jmbullion.com/robots.txt — "User-agent: * / Allow: /".
-# Neither dealer disallows product-page fetching, so both are collected
-# (disallowed: false below). If a dealer's robots or terms change, set
-# disallowed: true — the collector then skips it loudly.
+# BARRED 2026-07-16 — both dealers DISALLOWED; do not re-enable without a licence.
+#
+#   The original "check" below read only robots.txt and concluded both dealers
+#   were collectable. That was the exact error plan §7.7 now names: robots.txt is
+#   not consent, and the binding instrument is the Terms of Use, which were never
+#   read. When read (audited 2026-07-16, adversarially verified), BOTH bar AMC's
+#   use outright:
+#     JM Bullion (jmbullion.com/terms-and-conditions §3) — four independent bars:
+#       automated retrieval ("scripts, bots, robots, spiders ... to ... scrape,
+#       data mine"), an explicit ML/LLM-training bar, "personal, non-commercial
+#       use only", and "Systemically download and store Content". PLUS an
+#       anti-evasion clause ("use ... other methods to evade our controls") that
+#       the amp.jmbullion.com workaround below trips directly — the www 403 was
+#       JM answering, and routing to AMP is evading that answer.
+#     APMEX (apmex.com/useragreement) — bars "data mining, robots or similar
+#       ... extraction methods" and "collection and use of any product listings,
+#       descriptions, or prices" (the collector's entire output). [APMEX ToU
+#       403'd the auditor's fetcher; wording is search-index-recovered and should
+#       be confirmed from a browser before it is treated as file-of-record.]
+#   robots.txt findings, retained only as the record of what was checked and
+#   found insufficient: apmex product pages not disallowed; jmbullion disallows
+#   only /go/ and /wp-admin/; amp.jmbullion.com allow-all. None of this grants
+#   consent — an exclusion protocol cannot.
+#
+# Licensed replacement: Greysheet CDN Public API V2 (dealer subscription, the
+# $299/yr item in results/amc_paid_data_review.md) — but it publishes CDN's CPG
+# retail *benchmark*, not these dealers' posted asks, so it is not a like-for-like
+# swap; the panel's construct changes. Dealer-specific asks require written
+# consent from APMEX / JM Bullion (both ToUs contemplate it). See journal.md
+# 2026-07-16 and licensing/ for the drafted requests.
 #
 # Price basis: ask_usd is the schema.org JSON-LD Product -> offers.price, which
 # at both dealers is the single-unit (qty 1-9) credit-card price — the one basis
@@ -48,7 +70,7 @@ dealers:
   apmex:
     display_name: APMEX
     robots_checked: "2026-07-12"
-    disallowed: false
+    disallowed: true # BARRED by ToU 2026-07-16 — see header. Was false (robots-only check).
     parse:
       ask_source: json_ld # schema.org Product -> offers.price
       ask_css: null # no stable CSS hook verified; repair lever after redesigns
@@ -60,7 +82,7 @@ dealers:
   jmbullion:
     display_name: JM Bullion
     robots_checked: "2026-07-12"
-    disallowed: false
+    disallowed: true # BARRED by ToU 2026-07-16 — see header. Was false (robots-only check).
     parse:
       ask_source: json_ld # schema.org Product -> offers.price
       ask_css: null

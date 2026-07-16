@@ -73,22 +73,17 @@ REGISTRY: tuple[CollectorSpec, ...] = (
         table="coin_premiums",
         timestamp_col="pulled_at",
     ),
-    CollectorSpec(
-        name="trends",
-        module="metals.data.trends",
-        refresh_kwargs={},
-        cadence_days=7,
-        table="search_interest",
-        timestamp_col="pulled_at",
-    ),
-    CollectorSpec(
-        name="cme_daily",
-        module="metals.data.cme_daily",
-        refresh_kwargs={},
-        cadence_days=1,
-        table="cme_daily",
-        timestamp_col="pulled_at",
-    ),
+    # trends is deliberately absent (2026-07-16). Unlike cme_daily (barred at the
+    # source), Google LICENSES Trends data but only via a sanctioned MANUAL CSV
+    # export; the old scraper defeated a non-browser gate, which the ToS bar. So
+    # metals.data.trends is now an operator-run CSV importer (like amc_ledger) whose
+    # refresh() takes a file path and cannot be scheduled argless. It is NOT
+    # backfillable — Trends rescales per request — so run it weekly by hand; every
+    # skipped week is a lost snapshot. See journal.md 2026-07-16.
+    # cme_daily is deliberately absent (2026-07-15). Its website source is barred by
+    # CME's Data Terms of Use for AMC's use, so the scheduler must not keep attempting
+    # it nightly. The series is backfillable via Databento, so nothing accrues in the
+    # meantime and it needs no cadence entry until it is retargeted. See journal.md.
     CollectorSpec(
         name="jm_pgm",
         module="metals.data.jm_pgm",

@@ -1840,3 +1840,284 @@ work lives in `results/figures/` (plus `results/amc_findings_dashboard.html`).
   running). Still open, unchanged: CME first pull from the laptop network;
   ledger export-format contract with bookkeeping; Databento + Greysheet paid
   sprint; Phase 6.10/6.11 + v1.0 tag.
+
+---
+
+## 2026-07-15 (later) — CME: the scrape is abandoned, and the premise behind it was wrong
+
+Started as a state-of-the-repo review; ended by deleting a collector's whole
+approach and correcting a misclassification that had propagated into four
+documents.
+
+- **The diff that prompted it.** The working tree held an uncommitted change
+  swapping `requests` → `curl_cffi` with `impersonate="chrome"` in
+  `cme_daily.py`, to clear the Akamai 403. It is **stashed, not committed**
+  (`git stash list`, message names this entry). `curl-cffi` never entered
+  `pyproject.toml`.
+- **The journal was wrong about the block, and I confirmed it.** Entries on
+  07-13 and 07-15 both record "cmegroup.com blocks this sandbox's IP outright"
+  and list "run the first pull from the laptop's own network" as a user action.
+  Not an IP block. Same machine, same endpoint
+  (`/CmeWS/mvc/ProductCalendar/Future/437`), seconds apart: plain `requests`
+  → 403; `curl_cffi` impersonating Chrome → 200 with 19 KB of valid JSON. The
+  403 body *self-describes* as an IP block ("This IP address is blocked due to
+  suspected web scraping activity") — Akamai boilerplate that got recorded
+  verbatim and propagated. **Lesson: a vendor's error text is a claim, not a
+  diagnosis.** The cheap experiment (two clients, one endpoint) would have
+  settled it on day one and was never run.
+- **But reachability was the wrong question.** CME's **Data Terms of Use**
+  (updated 2023-09-07) define the content to include "volume... open interest
+  and related information", then prohibit "scripts, software, spiders, robots...
+  to navigate, access, copy in bulk, retrieve, harvest, index, search or analyze
+  any portion of the Website" absent prior written permission, and limit access
+  to "**personal use for non-commercial purposes**" — expressly excluding
+  "development of any software program, including... training a machine learning
+  or artificial intelligence system" and "providing archived or cached data
+  sets". **AMC fails all three independently**: it is a commercial dealer, this
+  codebase trains models, and an append-only DuckDB capture is the named
+  cached-dataset prohibition. **Dropping the automation does not cure it** —
+  the commercial-use bar survives manual download, which is worth stating
+  because that is the obvious workaround and it doesn't work.
+- **The Akamai block is enforcement, not an obstacle.** Advisory Chadv23-364
+  (2023-12-07) announced "enhanced technology designed to prevent unauthorized
+  use of or access to the Website" effective 2024-01-08, directing affected
+  users to Data Sales. The 403 is CME answering. `robots.txt` is a red herring
+  here: `/CmeWS/` genuinely is *not* disallowed for `*` (`/CmeWeb/` is a
+  different path), and CME names `/CmeWS/` only in the GPTBot / Google-Extended
+  / social-bot groups. But robots is an *exclusion* protocol keyed on honest
+  self-identification — it subtracts from what the server serves and can never
+  add, so it cannot authorize what a 403 refuses. Note also that impersonation
+  bought **zero** robots benefit: the honest UA `AMCResearchCollector/0.1` and a
+  Chrome UA both land in `*`, where the path was already allowed. Its only
+  function was defeating the refusal. That the *honest* client is the one
+  refused is the cleanest evidence that the operator's decision keys on exactly
+  the fact the impersonation falsifies.
+- **The bigger error: CME OI is not non-backfillable.** Databento retains the
+  `statistics` schema (settlement, open interest, cleared volume, block volume)
+  **permanently**, so the series can be pulled retroactively whenever. The
+  "forward capture is free; hindsight is not" premise — which put collector 4 on
+  the critical path, generated the 5-day TradeDate urgency, and motivated the
+  impersonation — was simply false. `cme_daily` sitting at 0 rows for three days
+  cost **nothing**, and nothing was captured, so there is no tainted data to
+  remediate. Corrected in `CLAUDE.md`, `plans/00_roadmap.md`,
+  `plans/phase_7_amc_program.md` §7.1, `results/amc_data_acquisition_program.md`
+  (Collector 4 rewritten), `results/amc_paid_data_review.md` (Buy 1 rescoped).
+- **Databento does both legs, and is *better* than the scrape here.** ~$1/month
+  forward (64-byte `StatMsg`; ~27 MB/mo), licence-free (the 24-hour embargo keeps
+  it outside real-time licensing). Cost of matching the scrape's same-evening
+  preliminaries is the live feed at ~$900/mo — GC/SI are COMEX, PL/PA are NYMEX,
+  so two DCMs and non-display "Research and Analysis" doubles — indefensible
+  against a days-to-weeks float. **The unintuitive part:** for a codebase this
+  invested in leakage discipline, the licensed replay beats the live capture it
+  replaces. `ts_recv` timestamps the nanosecond each statistic became knowable
+  and `update_action` preserves the revision sequence; `pulled_at` was only ever
+  a proxy for that. The splice gate dissolves with the splice (one source, no
+  overlap), but the preliminary-vs-final distinction survives — now carried
+  natively in `stat_flags` rather than inferred.
+- **Before funding:** 2010-06 → 2017-05 is MDP2-reconstructed (tag-52 timestamps
+  with `F_BAD_TS_RECV`; pre-2015-01-20 `stat_flags` off-spec). `statistics`
+  completeness across that era is **unconfirmed** and it is the leg being paid
+  for — ask Data Sales *before* signup, since the $125 credits expire six months
+  from signup rather than first use.
+- **New standing gate (§7.7): acquisition legitimacy.** Check the source's ToU
+  against *AMC's actual use* before building — commercial / model-training /
+  cached-dataset clauses routinely bar what robots.txt permits, and the
+  free-to-view figure is often the one being sold. A 403 is an answer, not an
+  obstacle; never defeat one by misrepresenting the client. **Immediately
+  pending under it:** the JM Bullion / APMEX buyback-bid leg of collector 2,
+  deferred 2026-07-13 as a "curl_cffi user decision" — the identical question,
+  and it should not be decided differently just because it came up second.
+- **Also corrected:** `backup_db.py`'s docstring justifies treating the 54 GB
+  `headlines` mass as expendable because it is "already mirrored in the
+  pre-collector Windows copy". **That copy does not exist** — the only
+  `*.duckdb` under `/mnt/c/Users/mcmur` is a 4 KB CLI config dir. The weekly
+  `--full` leg has also never run (first fire Sun 07-19), so the corpus
+  currently has **no backup anywhere**. Unrelated to CME; found in the same
+  sweep; flagged for the next session.
+- **Gate:** untouched by this session's edits (docs + stash only). Baseline as
+  measured today: 482 tests pass, ruff check + format clean, mypy at the accepted
+  8 pre-existing errors (4 files; a 6.11 item).
+
+---
+
+## 2026-07-16 — ToU audit of the four live collectors: all four BARRED
+
+Applied the §7.7 acquisition-legitimacy gate (written yesterday after CME) to the
+four collectors that were already live and capturing, not just to future ones.
+Each was audited against its source's actual Terms of Use for AMC's *actual* use
+(commercial dealer; trains models; append-only DuckDB = cached dataset), then the
+verdict was adversarially re-checked against both failure modes (false-BARRED from
+boilerplate over-read; false-CLEAR from motivated reasoning). **All four verdicts
+came back BARRED and all four survived verification** — but on materially different
+grounds, and with three of the four curable.
+
+- **First action, before anything else:** stopped + disabled `amc-collectors-daily`
+  and `amc-collectors-weekly` timers (`systemctl --user stop/disable`). They would
+  have fired 03:32 today and added fresh infringing captures. Backup timers
+  (`amc-backup-tables`, `amc-backup-full`) left armed and enabled — verified.
+- **Also done first:** ran `backup_db.py --full` manually. **54.4 GB → /mnt/c in
+  500 s, exit 0** — the corpus's *first* real backup (the weekly leg had never
+  run; see yesterday's entry on the false "already mirrored" premise, now
+  corrected in the script docstring). Still same-laptop; off-site still wanted.
+
+**coin_premiums — BARRED, worst of the four, and it's the daily one.**
+- JM Bullion (jmbullion.com/terms §3): four independent bars — automated retrieval,
+  an explicit **ML/LLM-training** clause, personal-non-commercial-only, and
+  "Systemically download and store Content." *Plus* an anti-evasion clause ("use …
+  other methods to evade our controls"). The collector uses `amp.jmbullion.com`
+  precisely because `www` 403s honest clients — the config documented that
+  workaround as a feature. That is the CME impersonation problem in a second
+  costume: a documented route around a refusal. The buyback-bid `curl_cffi` path
+  the journal flagged as a "pending user decision" is resolved by this: do not land
+  it.
+- APMEX (apmex.com/useragreement): bars "data mining, robots or similar … extraction
+  methods" and "collection and use of any product listings, descriptions, or
+  prices" (the collector's whole output). **Honesty flag:** APMEX ToU 403'd the
+  auditor's fetcher, so its wording is search-index-recovered — confirm from a
+  browser before treating as file-of-record. Verdict does not hinge on exact
+  wording.
+- **Root cause:** `configs/premium_basket.yaml`'s "Robots / terms check
+  (2026-07-12)" read *only* robots.txt and concluded "neither dealer disallows
+  product-page fetching, so both are collected." ToUs were never opened. That is
+  robots.txt-as-consent — the exact error §7.7 names. Header rewritten; both
+  dealers set `disallowed: true` (collector skips loudly); the config-parity test
+  (`test_data_coin_premiums.py:70`) flipped to assert BARRED.
+
+**trends — BARRED, and it INVERTS the CME finding.** The *source* is clear: Google
+expressly grants "You can use any information from Google Trends, subject to the
+[ToS]" and offers a sanctioned CSV export. All three CME killers pass (no
+non-commercial limit; the ML clause bars AI-*generated* content, not aggregated
+search stats; no cached-dataset bar). The bar is purely the **transport**:
+`trends.py` sends `Chrome/126` because — its own docstring — "the unofficial Trends
+API answers 429 to non-browser agents … an identified UA here means no data at
+all." That's bypassing a protective measure. **Curable, and the cure is the mirror
+image of CME's:** strip automation from CME and a commercial/cached bar still
+stands; strip it here and an *express licence* remains underneath. A human clicking
+the weekly CSV export (retarget `trends.py` to a CSV importer, amc_ledger pattern)
+cures it fully and still captures the per-request rescaling. BigQuery
+`google_trends` public dataset does NOT help — it's Top-25/DMA only, our terms
+never appear. Not yet actioned (weekly cadence, disabled timer buys time), but the
+`trends` CollectorSpec should get a CME-style removal with a DISTINCT comment: CME
+is barred-at-source + backfillable (nothing accrues); Trends is licensed-at-source
++ NOT backfillable (rescales per request, so the disable starts a clock).
+
+**consensus — BARRED on one clause, curable for $0.** Feed is first-party and
+*published* (FEI's own Weekly Export JSON — access is authorized, nothing
+bypassed, honest UA). No non-commercial limit, no ML clause. Barred only by FEED's
+"copying … in part or in whole … is explicitly prohibited," FEED defined to include
+event names + release datetimes + assembled data — which the append-only table
+copies. Cure: written consent from Fair Economy, Inc. (a ~13-person Tampa
+publisher). Drafted.
+
+**jm_pgm — BARRED on the price-specific clause, not the boilerplate.** "Any use of
+the Prices without the prior consent of Johnson Matthey Plc is prohibited," + UK
+sui generis database right over a substantial extraction (169,920 rows). The
+reviewer **struck** the audit's other ground — the sitewide personal/non-commercial
+footer — as stock UK boilerplate that would bar AMC from every UK corporate site;
+that discipline is why the surviving ground is credible. Live counter-reading worth
+knowing: the "any use" sentence sits inside JM's Benchmarks-Regulation paragraph,
+so it plausibly means "any *benchmark* use," which wouldn't reach internal
+modelling — a real ambiguity, resolved by asking, not by assuming in our favour.
+Only backfillable collector (JM publishes history), so pausing costs nothing.
+Drafted, with the BMR ambiguity as the crux of the ask.
+
+**Licensing drafts written to `licensing/`** (README + three emails: Greysheet,
+Fair Economy, Johnson Matthey). Drafts for a human to send from an AMC address;
+placeholders bracketed. Greysheet reframed: its CDN Public API V2 covers CPG
+*retail* values as well as wholesale bid/ask, so the paid-data review understated
+it — the $299/yr item already budgeted is a licensed replacement for most of the
+coin-premium panel, though CPG retail is a benchmark, NOT these dealers' posted
+asks (construct changes; note it, don't silently substitute). Read the Greysheet
+API licence for commercial-use / storage / ML-training before subscribing — a paid
+API is not automatically clear on any of them (the CME lesson).
+
+**Data on disk — NOT deleted, decision still open with the user.** Current rows:
+coin_premiums 12, macro_consensus 3, search_interest 1,310, pgm_prices 169,920
+(all captured 2026-07-13). Plus `data/raw/premium_panel/2026-07-13/` — 12 gzipped
+verbatim copies of copyrighted dealer pages (512 KB), the clearest infringement in
+the repo. Recommendation standing: delete the raw HTML archive; quarantine the DB
+rows (mark not-training-grade) rather than purge, since some may become licensed.
+Awaiting the user's go-ahead before touching either — deletion is irreversible.
+
+**Gate:** coin_premiums tests pass (25); full suite not re-run this entry (only the
+one test changed + config/docs/drafts). Timers disabled, config guards set, no data
+destroyed.
+
+---
+
+## 2026-07-16 (later) — Data hygiene: raw HTML deleted, rows quarantined, Trends rewritten to a CSV importer
+
+Two approved follow-ups from the ToU audit: (1) delete the infringing raw HTML +
+quarantine the captured rows, (2) rewrite the Trends collector onto Google's
+sanctioned manual export.
+
+### Deletion + quarantine
+- **Deleted `data/raw/premium_panel/`** (12 gzipped verbatim copies of APMEX/JM
+  Bullion pages, 512 KB) — the clearest infringement in the repo. The parsed
+  premiums remain in `coin_premiums`, independent of these files, so nothing of
+  analytic value was lost.
+- **Quarantine mechanism (migration `010` + `scripts/quarantine_barred_sources.py`).**
+  Added a nullable `quarantine_reason VARCHAR` to `coin_premiums`,
+  `macro_consensus`, `search_interest`, `pgm_prices`. NULL = usable; non-NULL = the
+  row was acquired outside its source's licence and is excluded from training /
+  shipped analysis. Downstream loaders must filter `quarantine_reason IS NULL`
+  (documented in CLAUDE.md conventions; nothing in features/models/eval reads these
+  tables yet, so this is preventive). The script stamped **171,245 rows** with
+  per-source reasons (coin_premiums 12, macro_consensus 3, search_interest 1,310,
+  pgm_prices 169,920); idempotent (re-run stamps 0), reversible (`SET
+  quarantine_reason = NULL` on licence). Column is additive so collectors' explicit
+  INSERTs are unaffected and future licensed rows land NULL.
+- **Backup docstring corrected** — `backup_db.py` claimed the 54 GB corpus was
+  "already mirrored in the pre-collector Windows copy"; that copy does not exist.
+  Rewrote the docstring to reflect that `--full` is the corpus's only backup and
+  that the truly-irreplaceable part is the KB of captures + ledger. (The full
+  backup ran earlier today: 54.4 GB → /mnt/c, the corpus's first.)
+
+### Trends: scraper → sanctioned-CSV importer
+The ToU audit found Trends BARRED only at the transport (Google licenses the data
+but the scraper defeated a non-browser 429 gate). So `src/metals/data/trends.py`
+is rewritten as a manual importer of Google's `multiTimeline.csv` export, mirroring
+`amc_ledger.py`. Research workflow nailed the CSV format first; key points baked in:
+- **The `<1` gotcha.** Trends' CSV emits the literal `<1` for nonzero interest
+  below 1 on the co-scaled index — distinct from a true `0`, and `int("<1")`
+  crashes. Stored as `value = 0` with a new `value_lt1 BOOLEAN` (migration `011`);
+  the row is NEVER dropped (dropping shifts every later week and corrupts the
+  series). The old API path never saw this (it returned int 0).
+- **Provenance under manual import.** `request_params` now records
+  `acquisition: manual_csv_export`, the group/geo/terms, the CSV's own header line,
+  and `timeframe_source: config` — the rescaling window is NOT recoverable from the
+  file, so it is asserted from config and flagged as such.
+- **`pulled_at` default = import time** (leakage-safe: import is at/after the true
+  download, so it can only demote freshness, never inflate it); `--pulled-at`
+  overrides with the true download time (also makes re-import idempotent, since
+  pulled_at is in the PK). File mtime deliberately NOT used (sync/copy rewrites it).
+- **Reconciliation.** Rejects unless the CSV's term set equals the frozen
+  `sell_side_v1` basket and the geo label matches — same "can't import a different
+  series under the same table" guarantee `amc_ledger`'s header check gives.
+- Tolerates the optional UTF-8 BOM and Excel-resave trailing commas; reads
+  resolution from the `Week`/`Day`/`Month` header token; `_period_end` unchanged.
+- **Attribution obligation** recorded in the docstring: shipped analysis reusing
+  the series must cite "Google Trends".
+
+### Scheduling made coherent
+- `trends` removed from the `run_collectors` REGISTRY (its `refresh()` now needs a
+  CSV path — can't be scheduled argless), distinct comment vs cme_daily.
+- **`install_schedule.sh` restructured:** all four collector sources are now
+  barred/manual, so the installer enables ONLY the backup timers and leaves the
+  collector timers disabled (neutralized ExecStart notices, real commands kept as
+  comments for when a licence lands). Fixes a latent footgun — the old installer
+  would have re-enabled barred scrapers on any re-run, and `--skip trends,...`
+  would have crashed on the removed name. Collector timers were already stopped +
+  disabled at the top of this session.
+- **Residual flagged:** `consensus` and `jm_pgm` remain in the REGISTRY (pending
+  licence decisions), so a *manual* `run_collectors.py` run would still scrape them.
+  Timers are disabled; a registry-level barred guard is the next step if defense in
+  depth against manual runs is wanted.
+
+### Gate
+- **488 tests pass** (was 483: trends test file rewritten — transport tests
+  dropped, CSV-parse/`<1`/reconcile/refresh tests added; +1 registry-exclusion
+  test). Old JSON transport fixtures deleted; two `multiTimeline.csv` fixtures
+  added (weekly w/ BOM + `<1`, and a monthly variant).
+- ruff check + format clean. mypy unchanged at the accepted 8 pre-existing errors
+  (none in the new code). Migrations `010`+`011` applied; next free number `012`.

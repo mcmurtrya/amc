@@ -1,18 +1,27 @@
 #!/usr/bin/env bash
 #
-# Install the AMC Phase 7.1 scheduling: user systemd timers that run the
-# collectors and the DB backups, so the non-backfillable daily captures stop
-# bleeding and the irreplaceable data gets mirrored off the WSL disk.
+# Install the AMC Phase 7.1 scheduling: user systemd timers for the DB backups,
+# so the irreplaceable data gets mirrored off the WSL disk.
+#
+# COLLECTOR TIMERS ARE PAUSED (2026-07-16). The ToU audit found every Phase 7.1
+# collector source bars AMC's use or moved to manual import (journal.md):
+# coin_premiums (APMEX/JM Bullion), consensus (ForexFactory), jm_pgm (Johnson
+# Matthey) are barred pending licence; trends is now an operator-run CSV importer.
+# So this installer generates the collector units but leaves them DISABLED, and
+# enables only the backup timers. Re-enable a collector's timer by hand once its
+# source is licensed (systemctl --user enable --now amc-collectors-*.timer) and
+# restore its real ExecStart (kept as a comment in the unit).
 #
 # WSL2 note: user systemd timers only fire while the WSL instance is running,
 # and only across logouts if lingering is enabled (this script enables it).
 # All timers use Persistent=true, so a run missed while the laptop was off
 # fires shortly after the next boot instead of being skipped.
 #
-# Idempotent: re-running rewrites the unit files and re-enables the timers.
+# Idempotent: re-running rewrites the unit files, enables backups, and keeps
+# the collector timers disabled.
 #
 # Usage:
-#   scripts/install_schedule.sh            # install + enable + start
+#   scripts/install_schedule.sh            # install; enable backups only
 #   scripts/install_schedule.sh --status   # just show timer status
 #   scripts/install_schedule.sh --uninstall # stop, disable, remove units
 
@@ -21,12 +30,17 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 UV_BIN="$(command -v uv || true)"
 UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
-UNITS=(
+# Collector timers are generated but left DISABLED (sources barred/manual — see
+# the header). Only the backup timers are enabled.
+COLLECTOR_UNITS=(
   amc-collectors-daily
   amc-collectors-weekly
+)
+BACKUP_UNITS=(
   amc-backup-tables
   amc-backup-full
 )
+UNITS=("${COLLECTOR_UNITS[@]}" "${BACKUP_UNITS[@]}")
 
 if [[ "${1:-}" == "--status" ]]; then
   systemctl --user list-timers --all 'amc-*' || true
@@ -50,16 +64,20 @@ fi
 
 mkdir -p "$UNIT_DIR"
 
-# --- collectors: daily set (coin_premiums, cme_daily, consensus) + gap audit ---
+# --- collectors: daily set (PAUSED — see header) ---
+# Left DISABLED by the enable step below: consensus (in the daily set) scrapes a
+# barred source, so this unit must not auto-run. The real command is preserved in
+# a comment for when a licence lands; the active ExecStart is a no-op notice so a
+# manual `systemctl start` does nothing harmful.
+#   Real (restore when licensed): run_collectors.py --skip jm_pgm  (+ --check-gaps)
 cat >"$UNIT_DIR/amc-collectors-daily.service" <<EOF
 [Unit]
-Description=AMC Phase 7.1 daily collectors + staleness audit
+Description=AMC Phase 7.1 daily collectors (PAUSED 2026-07-16 — sources barred)
 
 [Service]
 Type=oneshot
 WorkingDirectory=$REPO_ROOT
-ExecStart=$UV_BIN run python scripts/run_collectors.py --skip trends,jm_pgm
-ExecStartPost=$UV_BIN run python scripts/run_collectors.py --check-gaps
+ExecStart=/usr/bin/env bash -c 'echo "amc daily collectors are PAUSED (2026-07-16): sources barred by ToU. See journal.md." >&2'
 EOF
 
 cat >"$UNIT_DIR/amc-collectors-daily.timer" <<EOF
@@ -75,15 +93,19 @@ RandomizedDelaySec=300
 WantedBy=timers.target
 EOF
 
-# --- collectors: weekly set (trends, jm_pgm) ---
+# --- collectors: weekly set (PAUSED — see header) ---
+# jm_pgm (barred, pending JM licence) was the only remaining weekly collector after
+# trends became a manual CSV importer (2026-07-16). Left DISABLED; no-op ExecStart.
+#   Real (restore when licensed): run_collectors.py --only jm_pgm
+# trends is now run by hand: uv run python -m metals.data.trends <multiTimeline.csv>
 cat >"$UNIT_DIR/amc-collectors-weekly.service" <<EOF
 [Unit]
-Description=AMC Phase 7.1 weekly collectors (trends, jm_pgm)
+Description=AMC Phase 7.1 weekly collectors (PAUSED 2026-07-16 — sources barred/manual)
 
 [Service]
 Type=oneshot
 WorkingDirectory=$REPO_ROOT
-ExecStart=$UV_BIN run python scripts/run_collectors.py --only trends,jm_pgm
+ExecStart=/usr/bin/env bash -c 'echo "amc weekly collectors are PAUSED (2026-07-16): jm_pgm barred, trends is manual. See journal.md." >&2'
 EOF
 
 cat >"$UNIT_DIR/amc-collectors-weekly.timer" <<EOF
@@ -158,12 +180,18 @@ if ! loginctl show-user "$USER" 2>/dev/null | grep -q "Linger=yes"; then
 fi
 
 systemctl --user daemon-reload
-for u in "${UNITS[@]}"; do
+# Enable only the backup timers. Collector timers are generated but kept disabled
+# because every collector source is currently barred/manual (see header).
+for u in "${BACKUP_UNITS[@]}"; do
   systemctl --user enable --now "${u}.timer"
 done
+for u in "${COLLECTOR_UNITS[@]}"; do
+  systemctl --user disable --now "${u}.timer" 2>/dev/null || true
+done
+echo "Collector timers left DISABLED (sources barred/manual, 2026-07-16). Backups enabled."
 
 echo
-echo "Installed and started AMC timers:"
+echo "Installed AMC timers (backups enabled; collectors paused):"
 systemctl --user list-timers --all 'amc-*' || true
 echo
 echo "Manage with:"

@@ -49,15 +49,24 @@ backfilled. Full specification, rationale, and sequencing in
    term set, stored verbatim; Trends renormalizes per request, so only a
    real-time archive is honest. Setup-time history kept but flagged
    non-real-time.
-4. **CME daily volume/open-interest collector** — forward capture of the
-   public daily figures (Yahoo Pt/Pd volume is ~40% zeros). History is no
-   longer a wait: the funded Databento backfill (below) supplies official
-   settlement/volume/OI 2010-06+, and this collector becomes the
-   forward-continuity leg of a spliced series. Splice gate before any model
-   consumes the merge: numeric agreement on the live overlap AND
-   preliminary-vs-final OI semantics classified (a model trained on official
-   finals but fed scraped preliminaries live overstates real-time
-   performance).
+4. **CME daily volume/open-interest ingest** — official settlement/volume/OI
+   for GC/SI/PL/PA (Yahoo Pt/Pd volume is ~40% zeros), licensed from
+   Databento, both legs. **Revised 2026-07-15 — this item no longer belongs in
+   §7.1 and is not on any clock.** It was scoped as forward capture by scraping
+   cmegroup.com on the premise that open interest is non-backfillable. It is
+   not: Databento retains `statistics` permanently, so history and forward are
+   the same pull, at ~$1/month, licence-free (its 24-hour embargo keeps it
+   outside real-time licensing). The scrape is additionally barred on its own
+   terms — CME's Data ToU prohibit scripted retrieval and limit access to
+   personal, non-commercial use, expressly excluding software development,
+   model training, and cached data sets; AMC fails all three, and manual
+   download does not cure it (Advisory Chadv23-364, enforced via Akamai from
+   2024-01-08). The splice gate therefore dissolves with the splice: one
+   source, no overlap to reconcile. What survives is the
+   **preliminary-vs-final OI distinction**, now carried natively by
+   `stat_flags` and `update_action` rather than inferred — a model trained on
+   finals but fed preliminaries live still overstates real-time performance.
+   Databento's `ts_recv` makes that testable rather than assumed.
 5. **Event calendars + surprise upkeep** — (a) FOMC 2024–26+ calendar into
    `events` **with per-meeting statement release times** (~2:15pm ET pre-2011,
    12:30pm on presser meetings 2011–12, 2:00pm from 2013; presser start times
@@ -259,6 +268,18 @@ convert per-unit VaR into dollar VaR.
 - Transformers run only as pre-registered, kill-criterioned bake-offs
   (7.3 Stage 2, 7.4, 7.5 G2) — never as the default architecture.
 - Anything touching AMC's ledger stays on the local machine.
+- **Acquisition legitimacy is a gate, not a footnote (added 2026-07-15).** Before
+  a collector is built, check the source's Terms of Use and licensing for *AMC's
+  actual use* — commercial, model-training, and cached-dataset clauses routinely
+  bar uses that a robots.txt reading would permit, and the free-to-view figure is
+  often the one that is sold. A block, CAPTCHA, or 403 is the operator answering,
+  not an obstacle to route around: never defeat one by misrepresenting the client
+  (TLS/User-Agent impersonation). Prefer the licensed feed; where none is
+  affordable, ask — "prior written permission" is the mechanism these terms are
+  drafted around. Corollary: publicly visible ≠ licensed, and dropping the
+  automation does not cure a commercial-use bar. Pending under this gate: the JM
+  Bullion / APMEX buyback-bid leg of collector 2, deferred 2026-07-13 as a
+  "curl_cffi user decision" — same question, and it gets the same answer.
 - Parked pending fresh pre-registration: the h=20 gold-vol confirmation (the
   −2.12% lead traces to regime features, not text sequences).
 - Purchased or third-party "historical / point-in-time" series enter training
@@ -294,10 +315,15 @@ CATE that Phase 5 could only call suggestive.
 
 ## Ordering
 
-Off-site backup and 7.1 collectors 1–5 first; the paid sprint (Databento
-backfill incl. options + event-day minute bars; Greysheet) lands in the same
-first week — Databento's free credits expire ~6 months after signup, the one
-hard clock. Collectors 6–7 follow without extending the critical path. 7.2's
+Off-site backup and 7.1 collectors 1–3 and 5 first. **Revised 2026-07-15:**
+collector 4 (CME) leaves the critical path entirely — it is backfillable, so it
+can be pulled whenever the Databento account exists. Note the credits clock runs
+from **signup**, not first use, so signing up early burns it: send the
+completeness question to Data Sales first (is `statistics` complete across the
+MDP2-derived 2010-06 → 2017-05 era?), then sign up once ready to pull backfill,
+options, and event-day minute bars in one go. Greysheet's clock is the live one,
+and whether it is real is one unsent email away from being known.
+Collectors 6–7 follow without extending the critical path. 7.2's
 ΔDGS2 pass proceeds in parallel and does not wait for the backfill; the
 intraday composite and any 7.6 labeling do. Then 7.4 (fast artifacts), 7.3
 Stage 1, 7.8, and 7.5/7.6 as capacity allows — the hazard alarm is no longer

@@ -1,79 +1,101 @@
-"""Google Trends as-pulled search-interest archiver (Phase 7.1, collector 3).
+"""Google Trends as-pulled search-interest importer (Phase 7.1, collector 3).
 
-Weekly pull of the frozen term groups in ``configs/trends_terms.yaml`` into the
-``search_interest`` table. Google Trends *rescales* its 0-100 index on every
-request, so a series downloaded later is not the series a real-time observer
-would have seen — the only honest history is an archive of as-pulled snapshots.
-Every row therefore stores the verbatim ``request_params`` JSON (term set, geo,
-timeframe, tz, endpoints, and the resolved widget request): the parameters are
-part of the observation.
+**Rewritten 2026-07-16 from a live scraper into a manual-CSV importer.** The old
+collector called Google's internal ``/trends/api`` endpoints, which answer 429 to
+any non-browser client — so it sent a desktop-browser User-Agent to get served.
+That defeats a protective measure, which Google's Terms of Service prohibit (ToU
+audit 2026-07-16, journal.md). Google *separately* grants use of the data itself
+("You can use any information from Google Trends, subject to the Google Terms of
+Service", support.google.com/trends/answer/4365538) and offers a sanctioned CSV
+download. So acquisition moves from the wire to that file; the ``search_interest``
+schema and every downstream meaning are unchanged. **Attribution obligation:** any
+analysis shipped to AMC that reuses this series must cite "Google Trends
+(https://www.google.com/trends)".
 
-is_realtime rule: a row is realtime only if its ``period_end`` falls within
-``REALTIME_WINDOW_DAYS`` (14) days of ``pulled_at``. Everything earlier in the
-same response is setup-time context — Google served it retrospectively under
-today's rescaling — and gets ``is_realtime = False``, permanently.
+Google Trends *rescales* its 0-100 index on every request, against the tuple
+(term basket, geo, timeframe window). A series exported later is therefore not the
+series a real-time observer saw — the only honest history is an archive of
+as-pulled snapshots. Each row stores the verbatim ``request_params`` (group, geo,
+timeframe, the frozen term set, the CSV's own header line, and an
+``acquisition: manual_csv_export`` marker): the parameters are part of the
+observation. Note the timeframe window is *not* recoverable from the CSV — it is
+asserted from config and flagged as such in ``request_params``.
 
-User-Agent deviation: this collector sends a desktop browser UA instead of the
-program's "AMCResearchCollector/0.1" convention. The unofficial Trends API
-answers 429 to non-browser agents (verified 2026-07-12); an identified UA here
-means no data at all. Politeness is kept via the request rate instead
-(>= ``FETCH_SLEEP_S`` seconds between calls, weekly cadence, two API calls per
-term group).
+Operator workflow (weekly — mirrors the manual ``amc_ledger`` importer):
+    1. In the Trends UI load the frozen ``sell_side_v1`` comparison (its five
+       terms, United States, "Past 5 years"); click Download on the
+       Interest-over-time panel to get ``multiTimeline.csv``.
+    2. Drop it locally (``data/raw/trends/`` suggested; gitignored).
+    3. ``uv run python -m metals.data.trends <multiTimeline.csv>``
 
-Transport (verified live 2026-07-12): a cookie must first be seeded from
-google.com (the explore endpoint 429s cookie-less), then
-POST ``/trends/api/explore`` yields widget tokens, and
-GET ``/trends/api/widgetdata/multiline`` yields the interest-over-time data.
-Both responses carry the ``)]}'`` anti-JSON prefix. On HTTP 429 the collector
-sleeps and retries once, then raises — a silent gap is the failure mode this
-program exists to prevent.
+Not scheduled: the export is a human action, so this collector is absent from the
+``run_collectors`` registry (like ``amc_ledger``). Because Trends rescales per
+request, every skipped week permanently loses that week's as-pulled snapshot —
+run it weekly.
 
-Run as (weekly cadence):
-    uv run python -m metals.data.trends
+is_realtime rule (unchanged): realtime iff ``period_end`` is within
+``REALTIME_WINDOW_DAYS`` (14) days of ``pulled_at``. ``pulled_at`` defaults to the
+import moment, which is leakage-safe: import is always at or after the true
+download, so the default can only *demote* freshness, never inflate it. Pass
+``--pulled-at`` with the true Trends download timestamp to recover the final one
+or two weekly rows and to make re-import idempotent (``pulled_at`` is part of the
+primary key, so a fixed value upserts while the default mints a fresh snapshot).
+
+Sub-1 values: the CSV emits the literal ``<1`` for nonzero interest below 1 on the
+co-scaled index — distinct from a true ``0``. Stored as ``value = 0`` with
+``value_lt1 = True`` (migration 011) so the "present but tiny" signal is never
+merged into true zero, and the row is never dropped (dropping shifts every later
+date and corrupts the weekly series).
 """
 
 from __future__ import annotations
 
 import argparse
 import calendar
+import csv
 import json
-import time
-from collections.abc import Callable
+import re
+import sys
+from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 import pandas as pd
-import requests
 import yaml
 
 from metals.data.db import connection
 
 SOURCE_TAG = "google-trends"
 DEFAULT_TERMS_YAML = Path(__file__).resolve().parents[3] / "configs" / "trends_terms.yaml"
+DEFAULT_GROUP = "sell_side_v1"
 
-COOKIE_SEED_URL = "https://www.google.com/"
-EXPLORE_URL = "https://trends.google.com/trends/api/explore"
-MULTILINE_URL = "https://trends.google.com/trends/api/widgetdata/multiline"
-
-# Deviation from the collector UA convention — see module docstring.
-DESKTOP_UA = (
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-    "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
-)
-
-ANTI_JSON_PREFIX = ")]}'"
 REALTIME_WINDOW_DAYS = 14
-FETCH_SLEEP_S = 3.0
-BACKOFF_SLEEP_S = 60.0
 MAX_TERMS_PER_GROUP = 5  # hard Trends limit on comparison items per request
-REQUEST_TIMEOUT_S = 30
 
-SleepFn = Callable[[float], object]
+# The CSV's first column header is a resolution token; each data column header is
+# "<term>: (<geo label>)". Both are the file's own ground truth (read, don't assume).
+RESOLUTION_BY_TOKEN = {"Day": "DAY", "Week": "WEEK", "Month": "MONTH"}
+GEO_LABELS = {"US": "United States"}  # config geo code -> CSV parenthetical label
+HEADER_RE = re.compile(r"^(?P<term>.+?):\s*\((?P<geo>.+)\)$")
+SUB_ONE_TOKEN = "<1"  # literal cell for nonzero interest below 1 (distinct from "0")
+_BOM = "﻿"
+
+
+class TrendsImportError(ValueError):
+    """A Trends CSV export failed validation. Carries every violation; nothing written."""
+
+    def __init__(self, violations: list[str]) -> None:
+        self.violations = list(violations)
+        msg = f"{len(self.violations)} validation error(s); nothing imported:\n" + "\n".join(
+            f"  - {v}" for v in self.violations
+        )
+        super().__init__(msg)
 
 
 # ---------------------------------------------------------------------------
-# Config
+# Config (unchanged from the scraper — the frozen term set still defines the series)
 # ---------------------------------------------------------------------------
 
 
@@ -82,7 +104,7 @@ def load_term_groups(path: Path | str = DEFAULT_TERMS_YAML) -> list[dict[str, An
 
     Each group must carry ``name``, ``geo``, ``timeframe`` and 1-5 ``terms``.
     Raises on any structural problem — a malformed config must never produce a
-    silently-partial pull.
+    silently-partial import.
     """
     with Path(path).open("r") as f:
         cfg = yaml.safe_load(f)
@@ -111,144 +133,19 @@ def load_term_groups(path: Path | str = DEFAULT_TERMS_YAML) -> list[dict[str, An
     return groups
 
 
-# ---------------------------------------------------------------------------
-# Transport
-# ---------------------------------------------------------------------------
-
-
-def build_session() -> requests.Session:
-    """Return a session with a browser UA and a seeded google.com cookie.
-
-    The explore endpoint answers 429 to cookie-less clients; a plain GET to
-    google.com sets the cookie that makes it answer (verified 2026-07-12).
-    """
-    session = requests.Session()
-    session.headers["User-Agent"] = DESKTOP_UA
-    session.headers["Accept-Language"] = "en-US,en;q=0.9"
-    resp = session.get(COOKIE_SEED_URL, timeout=REQUEST_TIMEOUT_S)
-    resp.raise_for_status()
-    return session
-
-
-def _request_with_backoff(
-    session: requests.Session,
-    method: str,
-    url: str,
-    params: dict[str, str],
-    sleep: SleepFn = time.sleep,
-) -> str:
-    """Issue one request; on 429 sleep and retry exactly once, then raise.
-
-    Any other non-200 status raises immediately. Never returns silently-empty
-    data: an empty body is an error.
-    """
-    resp = session.request(method, url, params=params, timeout=REQUEST_TIMEOUT_S)
-    if resp.status_code == 429:
-        sleep(BACKOFF_SLEEP_S)
-        resp = session.request(method, url, params=params, timeout=REQUEST_TIMEOUT_S)
-    if resp.status_code != 200:
-        raise RuntimeError(
-            f"Google Trends {url} returned HTTP {resp.status_code} after backoff; "
-            "refusing to record a silent gap — investigate before the next pull"
-        )
-    if not resp.text:
-        raise RuntimeError(f"Google Trends {url} returned an empty body")
-    return resp.text
-
-
-def strip_antijson_prefix(text: str) -> str:
-    """Strip the ``)]}'`` anti-JSON prefix line Google prepends to API responses.
-
-    Raises if the prefix is absent — that means the response format drifted.
-    """
-    if not text.startswith(ANTI_JSON_PREFIX):
-        raise ValueError(
-            f"response does not start with the {ANTI_JSON_PREFIX!r} anti-JSON prefix "
-            "— Trends response format drift?"
-        )
-    _prefix, sep, rest = text.partition("\n")
-    if not sep or not rest.strip():
-        raise ValueError("no payload after the anti-JSON prefix line")
-    return rest
+def get_group(name: str = DEFAULT_GROUP, path: Path | str = DEFAULT_TERMS_YAML) -> dict[str, Any]:
+    """Return one frozen group from the config by name (raises if absent)."""
+    groups = load_term_groups(path)
+    for group in groups:
+        if group["name"] == name:
+            return group
+    known = ", ".join(str(g["name"]) for g in groups)
+    raise ValueError(f"term group {name!r} not found in {path} (known: {known})")
 
 
 # ---------------------------------------------------------------------------
-# Fetch + parse
+# Period math (unchanged)
 # ---------------------------------------------------------------------------
-
-
-def fetch_explore(
-    session: requests.Session,
-    terms: list[str],
-    geo: str,
-    timeframe: str,
-    tz: int = 0,
-    sleep: SleepFn = time.sleep,
-) -> dict[str, Any]:
-    """Step 1 of the unofficial flow: obtain widget tokens from /api/explore."""
-    req = {
-        "comparisonItem": [{"keyword": t, "geo": geo, "time": timeframe} for t in terms],
-        "category": 0,
-        "property": "",
-    }
-    params = {"hl": "en-US", "tz": str(tz), "req": json.dumps(req)}
-    text = _request_with_backoff(session, "POST", EXPLORE_URL, params, sleep=sleep)
-    payload = json.loads(strip_antijson_prefix(text))
-    if not isinstance(payload, dict) or not payload.get("widgets"):
-        raise ValueError("explore response carries no widgets — empty or drifted response")
-    return payload
-
-
-def extract_timeseries_widget(explore_payload: dict[str, Any]) -> dict[str, Any]:
-    """Pick the TIMESERIES widget (token + request) out of an explore payload."""
-    widgets = explore_payload.get("widgets")
-    if not isinstance(widgets, list):
-        raise ValueError("explore payload has no 'widgets' list")
-    for widget in widgets:
-        if isinstance(widget, dict) and widget.get("id") == "TIMESERIES":
-            if not widget.get("token") or not isinstance(widget.get("request"), dict):
-                raise ValueError("TIMESERIES widget is missing its token or request")
-            return widget
-    raise ValueError("explore payload has no TIMESERIES widget — schema drift")
-
-
-def widget_terms(widget: dict[str, Any]) -> list[str]:
-    """Read the term list back out of the TIMESERIES widget request.
-
-    Used to confirm the widget covers exactly the terms we asked for, in
-    order — the order defines which slot of each point's value array belongs
-    to which term.
-    """
-    items = widget.get("request", {}).get("comparisonItem")
-    if not isinstance(items, list) or not items:
-        raise ValueError("TIMESERIES widget request has no comparisonItem list")
-    terms: list[str] = []
-    for item in items:
-        keywords = item.get("complexKeywordsRestriction", {}).get("keyword")
-        if not isinstance(keywords, list) or len(keywords) != 1 or "value" not in keywords[0]:
-            raise ValueError("comparisonItem keyword structure drifted")
-        terms.append(str(keywords[0]["value"]))
-    return terms
-
-
-def fetch_interest_over_time(
-    session: requests.Session,
-    widget: dict[str, Any],
-    tz: int = 0,
-    sleep: SleepFn = time.sleep,
-) -> dict[str, Any]:
-    """Step 2: pull the interest-over-time data for a TIMESERIES widget token."""
-    params = {
-        "hl": "en-US",
-        "tz": str(tz),
-        "req": json.dumps(widget["request"]),
-        "token": str(widget["token"]),
-    }
-    text = _request_with_backoff(session, "GET", MULTILINE_URL, params, sleep=sleep)
-    payload = json.loads(strip_antijson_prefix(text))
-    if not isinstance(payload, dict):
-        raise ValueError("multiline response is not a JSON object")
-    return payload
 
 
 def _period_end(start: date, resolution: str) -> date:
@@ -262,49 +159,208 @@ def _period_end(start: date, resolution: str) -> date:
     raise ValueError(f"unsupported Trends resolution {resolution!r} — expected DAY, WEEK or MONTH")
 
 
-def parse_timeline(
-    payload: dict[str, Any],
+# ---------------------------------------------------------------------------
+# CSV parse (the multiTimeline.csv layout)
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ExportFrame:
+    """A parsed multiTimeline.csv: header metadata + raw (period, value-cell) rows.
+
+    ``periods`` holds raw string value cells (not yet numeric) aligned position-wise
+    to ``terms`` — value tokens are validated later, together with term/geo
+    reconciliation, so every problem is reported at once.
+    """
+
+    resolution_token: str  # "Week"
+    resolution: str  # "WEEK"
+    geo_label: str  # "United States"
+    terms: list[str]  # parsed term set, in CSV column order
+    header_line: str  # verbatim header row
+    title_line: str | None  # "Category: All categories"
+    periods: list[tuple[date, list[str]]]  # (period_start, raw value cells)
+
+
+def _parse_period_start(cell: str, resolution: str) -> date:
+    """Parse the time-column cell for a given resolution. Raises on malformed dates."""
+    text = cell.strip()
+    if resolution == "MONTH":
+        year, _, month = text.partition("-")
+        return date(int(year), int(month), 1)
+    return date.fromisoformat(text)  # DAY / WEEK are YYYY-MM-DD (week-start Sunday)
+
+
+def parse_multitimeline(text: str) -> ExportFrame:
+    """Parse the raw text of a Trends interest-over-time CSV export.
+
+    Tolerant of an optional UTF-8 BOM, the localized ``Category:`` title line, a
+    blank/comma-only separator line, and Excel-resaved trailing commas. Raises
+    ``TrendsImportError`` on structural drift: no resolution header row, a data
+    column header that is not ``term: (geo)``, an unknown resolution token, a
+    ragged data row, or an unparseable date.
+    """
+    if text.startswith(_BOM):
+        text = text[len(_BOM) :]
+    rows = list(csv.reader(text.splitlines()))
+    if not rows:
+        raise TrendsImportError(["file is empty"])
+
+    header_idx = next(
+        (i for i, r in enumerate(rows) if r and r[0].strip() in RESOLUTION_BY_TOKEN),
+        None,
+    )
+    if header_idx is None:
+        raise TrendsImportError(
+            ["no Day/Week/Month header row found — not a Trends interest-over-time export?"]
+        )
+
+    preamble = [r for r in rows[:header_idx] if any(c.strip() for c in r)]
+    title_line = preamble[0][0].strip() if preamble and preamble[0] else None
+
+    header = rows[header_idx]
+    resolution_token = header[0].strip()
+    resolution = RESOLUTION_BY_TOKEN[resolution_token]
+    if len(header) < 2:
+        raise TrendsImportError([f"header row {header!r} has no data columns"])
+
+    terms: list[str] = []
+    geo_labels: list[str] = []
+    for col in header[1:]:
+        match = HEADER_RE.match(col.strip())
+        if not match:
+            raise TrendsImportError(
+                [f"column header {col!r} is not '<term>: (<geo>)' — Trends export format drift"]
+            )
+        terms.append(match.group("term").strip())
+        geo_labels.append(match.group("geo").strip())
+    if len(set(geo_labels)) != 1:
+        raise TrendsImportError(
+            [f"columns mix geographies {sorted(set(geo_labels))} — one expected"]
+        )
+    geo_label = geo_labels[0]
+
+    periods: list[tuple[date, list[str]]] = []
+    for r in rows[header_idx + 1 :]:
+        if not any(c.strip() for c in r):
+            continue  # tolerate trailing blank lines
+        if len(r) != len(header):
+            raise TrendsImportError(
+                [f"data row {r!r} has {len(r)} cells; header has {len(header)} — ragged export"]
+            )
+        try:
+            start = _parse_period_start(r[0], resolution)
+        except ValueError as exc:
+            raise TrendsImportError(
+                [f"unparseable {resolution_token} date {r[0]!r} ({exc})"]
+            ) from exc
+        periods.append((start, [c for c in r[1:]]))
+    if not periods:
+        raise TrendsImportError(["export has a header but no data rows"])
+
+    return ExportFrame(
+        resolution_token=resolution_token,
+        resolution=resolution,
+        geo_label=geo_label,
+        terms=terms,
+        header_line=",".join(header),
+        title_line=title_line,
+        periods=periods,
+    )
+
+
+def read_export_csv(path: Path | str) -> ExportFrame:
+    """Read a Trends CSV export file and parse it. Raises on an empty/unreadable file."""
+    raw = Path(path).read_text(encoding="utf-8")
+    if not raw.strip():
+        raise TrendsImportError([f"{path}: file is empty"])
+    return parse_multitimeline(raw)
+
+
+def reconcile_terms(exp: ExportFrame, group: dict[str, Any], violations: list[str]) -> None:
+    """Confirm the export covers exactly the frozen group's basket and geography.
+
+    Continuity of the series depends on the request tuple being identical, so a
+    different term set or geography must reject — not silently import a different
+    series under the same table. Appends to ``violations``; never raises.
+    """
+    expected_terms = [str(t) for t in group["terms"]]
+    csv_terms = list(exp.terms)
+    missing = sorted(set(expected_terms) - set(csv_terms))
+    unexpected = sorted(set(csv_terms) - set(expected_terms))
+    if missing:
+        violations.append(f"export is missing frozen term(s): {', '.join(missing)}")
+    if unexpected:
+        violations.append(
+            f"export has term(s) not in group {group['name']!r}: {', '.join(unexpected)}"
+        )
+    dupes = sorted({t for t in csv_terms if csv_terms.count(t) > 1})
+    if dupes:
+        violations.append(f"export has duplicate term column(s): {', '.join(dupes)}")
+
+    expected_label = GEO_LABELS.get(str(group["geo"]))
+    if expected_label is None:
+        violations.append(
+            f"no CSV geo label known for config geo {group['geo']!r} — add it to GEO_LABELS"
+        )
+    elif exp.geo_label != expected_label:
+        violations.append(
+            f"export geography {exp.geo_label!r} != expected {expected_label!r} "
+            f"for config geo {group['geo']!r}"
+        )
+
+
+def _parse_value_cell(
+    raw: str, term: str, start: date, violations: list[str]
+) -> tuple[int | None, bool]:
+    """Parse one value cell. Returns (value, is_sub_one). Appends on drift."""
+    s = raw.strip()
+    if s == SUB_ONE_TOKEN:
+        return 0, True
+    if s == "":
+        violations.append(f"{start} term {term!r}: empty value cell — Trends export drift")
+        return None, False
+    try:
+        value = int(s)
+    except ValueError:
+        violations.append(
+            f"{start} term {term!r}: value {raw!r} is neither an integer nor {SUB_ONE_TOKEN!r}"
+        )
+        return None, False
+    if not 0 <= value <= 100:
+        violations.append(f"{start} term {term!r}: value {value} outside the 0-100 index range")
+        return None, False
+    return value, False
+
+
+# ---------------------------------------------------------------------------
+# Row assembly (the kept core of the old parse_timeline, fed from the CSV)
+# ---------------------------------------------------------------------------
+
+
+def build_rows(
+    exp: ExportFrame,
     *,
-    terms: list[str],
     geo: str,
-    resolution: str,
     pulled_at: datetime,
     request_params: dict[str, Any],
 ) -> pd.DataFrame:
-    """Turn a multiline payload into long ``search_interest`` rows.
+    """Turn a reconciled ExportFrame into long ``search_interest`` rows.
 
-    ``pulled_at`` is UTC (naive, or aware — normalized to naive UTC). Raises on
-    any structural drift: missing timelineData, unparseable point times, or a
-    value array whose length does not match the term list.
+    ``geo`` is the config code (e.g. "US") stored in the table — not the CSV's
+    human label — so imported rows match the old scraped rows. ``pulled_at`` is
+    normalized to naive UTC. Raises ``TrendsImportError`` if any value cell drifts.
     """
     if pulled_at.tzinfo is not None:
         pulled_at = pulled_at.astimezone(UTC).replace(tzinfo=None)
-    default = payload.get("default")
-    if not isinstance(default, dict):
-        raise ValueError("multiline payload missing 'default' — schema drift")
-    timeline = default.get("timelineData")
-    if not isinstance(timeline, list) or not timeline:
-        raise ValueError("multiline payload has no timelineData — empty or drifted response")
-
     params_json = json.dumps(request_params, sort_keys=True)
+    violations: list[str] = []
     rows: list[dict[str, Any]] = []
-    for point in timeline:
-        raw_time = point.get("time")
-        try:
-            start = datetime.fromtimestamp(int(raw_time), tz=UTC).date()
-        except (TypeError, ValueError) as exc:
-            raise ValueError(f"unparseable timelineData point time {raw_time!r}") from exc
-        values = point.get("value")
-        if not isinstance(values, list) or len(values) != len(terms):
-            got = len(values) if isinstance(values, list) else "no"
-            raise ValueError(
-                f"point starting {start} carries {got} values for {len(terms)} terms — schema drift"
-            )
-        end = _period_end(start, resolution)
+    for start, cells in exp.periods:
+        end = _period_end(start, exp.resolution)
         is_realtime = (pulled_at.date() - end).days <= REALTIME_WINDOW_DAYS
-        for term, value in zip(terms, values, strict=True):
-            if not isinstance(value, int) or isinstance(value, bool):
-                raise ValueError(f"non-integer value {value!r} for term {term!r} at {start}")
+        for term, raw in zip(exp.terms, cells, strict=True):
+            value, is_sub_one = _parse_value_cell(raw, term, start, violations)
             rows.append(
                 {
                     "pulled_at": pulled_at,
@@ -313,64 +369,21 @@ def parse_timeline(
                     "period_start": start,
                     "period_end": end,
                     "value": value,
+                    "value_lt1": is_sub_one,
                     "request_params": params_json,
                     "source": SOURCE_TAG,
                     "is_realtime": is_realtime,
                 }
             )
+    if violations:
+        raise TrendsImportError(violations)
     df = pd.DataFrame(rows)
     df["pulled_at"] = pd.to_datetime(df["pulled_at"])
     df["period_start"] = pd.to_datetime(df["period_start"])
     df["period_end"] = pd.to_datetime(df["period_end"])
+    df["value"] = df["value"].astype("int64")
+    df["value_lt1"] = df["value_lt1"].astype("bool")
     return df
-
-
-def collect_group(
-    session: requests.Session,
-    group: dict[str, Any],
-    tz: int = 0,
-    pulled_at: datetime | None = None,
-    sleep: SleepFn = time.sleep,
-) -> pd.DataFrame:
-    """Run the two-step flow for one term group and return its long rows."""
-    terms = [str(t) for t in group["terms"]]
-    geo, timeframe = str(group["geo"]), str(group["timeframe"])
-
-    explore = fetch_explore(session, terms, geo=geo, timeframe=timeframe, tz=tz, sleep=sleep)
-    widget = extract_timeseries_widget(explore)
-    served_terms = widget_terms(widget)
-    if served_terms != terms:
-        raise ValueError(
-            f"TIMESERIES widget terms {served_terms!r} != requested {terms!r} — "
-            "value columns would be misattributed"
-        )
-    resolution = widget["request"].get("resolution")
-    if not isinstance(resolution, str):
-        raise ValueError("TIMESERIES widget request has no 'resolution' — schema drift")
-
-    sleep(FETCH_SLEEP_S)
-    payload = fetch_interest_over_time(session, widget, tz=tz, sleep=sleep)
-    if pulled_at is None:
-        pulled_at = datetime.now(UTC).replace(tzinfo=None)
-
-    request_params = {
-        "group": group["name"],
-        "terms": terms,
-        "geo": geo,
-        "timeframe": timeframe,
-        "tz": tz,
-        "explore_endpoint": EXPLORE_URL,
-        "widget_endpoint": MULTILINE_URL,
-        "widget_request": widget["request"],
-    }
-    return parse_timeline(
-        payload,
-        terms=terms,
-        geo=geo,
-        resolution=resolution,
-        pulled_at=pulled_at,
-        request_params=request_params,
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -379,7 +392,12 @@ def collect_group(
 
 
 def upsert_search_interest(df: pd.DataFrame) -> int:
-    """Idempotent upsert into ``search_interest``. Returns rows written."""
+    """Idempotent upsert into ``search_interest``. Returns rows written.
+
+    ``quarantine_reason`` is intentionally not written: new imported rows default
+    it to NULL (usable), and it is excluded from the conflict update so a licence
+    clearance is never silently undone by a re-import.
+    """
     if df.empty:
         return 0
     with connection() as conn:
@@ -387,15 +405,16 @@ def upsert_search_interest(df: pd.DataFrame) -> int:
         conn.execute(
             """
             INSERT INTO search_interest
-                (pulled_at, geo, term, period_start, period_end, value,
+                (pulled_at, geo, term, period_start, period_end, value, value_lt1,
                  request_params, source, is_realtime)
             SELECT pulled_at, geo, term,
-                   CAST(period_start AS DATE), CAST(period_end AS DATE), value,
+                   CAST(period_start AS DATE), CAST(period_end AS DATE), value, value_lt1,
                    request_params, source, is_realtime
             FROM incoming_search_interest
             ON CONFLICT (pulled_at, geo, term, period_start) DO UPDATE SET
                 period_end     = EXCLUDED.period_end,
                 value          = EXCLUDED.value,
+                value_lt1      = EXCLUDED.value_lt1,
                 request_params = EXCLUDED.request_params,
                 source         = EXCLUDED.source,
                 is_realtime    = EXCLUDED.is_realtime
@@ -405,51 +424,108 @@ def upsert_search_interest(df: pd.DataFrame) -> int:
     return int(len(df))
 
 
-def refresh(path: Path | str = DEFAULT_TERMS_YAML, tz: int = 0) -> dict:
-    """Pull every configured term group and upsert. Return a summary dict.
+def refresh(
+    path: Path | str,
+    group: str = DEFAULT_GROUP,
+    *,
+    pulled_at: datetime | None = None,
+    config: Path | str = DEFAULT_TERMS_YAML,
+) -> dict:
+    """Validate + import one Trends CSV export (all-or-nothing). Returns a summary dict.
 
-    Fail-loud by design: any HTTP failure, empty response, or schema drift in
-    any group raises and aborts the whole run — the scheduler's alert is the
-    fix, not a quiet partial write.
+    ``path`` is the multiTimeline.csv export; ``group`` selects the frozen config
+    group to reconcile against. ``pulled_at`` defaults to the import moment (the
+    leakage-safe choice — see the module docstring); pass the true Trends download
+    time to recover the tail realtime rows and make re-import idempotent.
     """
-    groups = load_term_groups(path)
-    session = build_session()
-    frames: list[pd.DataFrame] = []
-    per_group: dict[str, int] = {}
-    for i, group in enumerate(groups):
-        if i:
-            time.sleep(FETCH_SLEEP_S)
-        df = collect_group(session, group, tz=tz)
-        per_group[str(group["name"])] = int(len(df))
-        frames.append(df)
-    df_all = pd.concat(frames, ignore_index=True)
-    n = upsert_search_interest(df_all)
+    grp = get_group(group, config)
+    geo = str(grp["geo"])
+    exp = read_export_csv(path)
+
+    violations: list[str] = []
+    reconcile_terms(exp, grp, violations)
+    if violations:
+        raise TrendsImportError(violations)
+
+    if pulled_at is None:
+        pulled_at = datetime.now(UTC).replace(tzinfo=None)
+    downloaded_at = (
+        pulled_at.astimezone(UTC) if pulled_at.tzinfo is not None else pulled_at
+    ).replace(tzinfo=None)
+
+    request_params = {
+        "acquisition": "manual_csv_export",
+        "group": grp["name"],
+        "geo": geo,
+        "timeframe": str(grp["timeframe"]),
+        "timeframe_source": "config",  # the rescaling window is NOT in the CSV
+        "resolution": exp.resolution,
+        "resolution_source": "csv_header_token",
+        "terms": list(exp.terms),
+        "source_file": Path(path).name,
+        "csv_header": exp.header_line,
+        "csv_title_line": exp.title_line,
+        "config_path": str(config),
+        "downloaded_at": downloaded_at.isoformat() + "Z",
+    }
+    df = build_rows(exp, geo=geo, pulled_at=pulled_at, request_params=request_params)
+    n = upsert_search_interest(df)
     return {
+        "source": SOURCE_TAG,
+        "group": grp["name"],
+        "source_file": Path(path).name,
+        "resolution": exp.resolution,
         "rows_written": n,
-        "rows_per_group": per_group,
         "period_range": [
-            df_all["period_start"].min().date().isoformat(),
-            df_all["period_end"].max().date().isoformat(),
+            df["period_start"].min().date().isoformat(),
+            df["period_end"].max().date().isoformat(),
         ],
-        "realtime_rows": int(df_all["is_realtime"].sum()),
-        "pulled_at": df_all["pulled_at"].max().isoformat(),
+        "realtime_rows": int(df["is_realtime"].sum()),
+        "sub_one_rows": int(df["value_lt1"].sum()),
+        "pulled_at": df["pulled_at"].max().isoformat(),
     }
 
 
-def main() -> None:
-    parser = argparse.ArgumentParser(description="Archive Google Trends as-pulled snapshots.")
+def main(argv: Sequence[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(
+        description="Import a Google Trends multiTimeline.csv export into search_interest.",
+    )
+    parser.add_argument("file", help="Path to the Trends interest-over-time CSV export.")
+    parser.add_argument(
+        "--group",
+        default=DEFAULT_GROUP,
+        help=f"Frozen term group to reconcile against (default {DEFAULT_GROUP}).",
+    )
+    parser.add_argument(
+        "--pulled-at",
+        default=None,
+        help="True Trends download time (ISO 8601). Default: import moment (leakage-safe).",
+    )
     parser.add_argument("--config", default=str(DEFAULT_TERMS_YAML), help="Term-groups YAML.")
-    parser.add_argument("--tz", type=int, default=0, help="Trends tz offset (minutes; 0 = UTC).")
-    args = parser.parse_args()
-    summary = refresh(path=args.config, tz=args.tz)
-    print(f"Rows written:   {summary['rows_written']}")
-    print(f"Per group:      {summary['rows_per_group']}")
-    print(f"Period range:   {summary['period_range']}")
+    args = parser.parse_args(argv)
+
+    pulled_at = None
+    if args.pulled_at is not None:
+        pulled_at = datetime.fromisoformat(args.pulled_at)
+
+    try:
+        summary = refresh(args.file, group=args.group, pulled_at=pulled_at, config=args.config)
+    except TrendsImportError as exc:
+        print(f"IMPORT REJECTED: {args.file}", file=sys.stderr)
+        for v in exc.violations:
+            print(f"  - {v}", file=sys.stderr)
+        print(f"{len(exc.violations)} violation(s); nothing was written.", file=sys.stderr)
+        raise SystemExit(1) from exc
+
+    print(f"Group:         {summary['group']} ({summary['resolution']})")
+    print(f"Rows written:  {summary['rows_written']}")
+    print(f"Period range:  {summary['period_range']}")
     print(
-        f"Realtime rows:  {summary['realtime_rows']} (period_end within "
+        f"Realtime rows: {summary['realtime_rows']} (period_end within "
         f"{REALTIME_WINDOW_DAYS}d of pull)"
     )
-    print(f"Pulled at:      {summary['pulled_at']}Z")
+    print(f"Sub-1 rows:    {summary['sub_one_rows']} (value '<1' stored as 0, value_lt1=True)")
+    print(f"Pulled at:     {summary['pulled_at']}Z")
 
 
 if __name__ == "__main__":

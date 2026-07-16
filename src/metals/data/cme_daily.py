@@ -1,5 +1,35 @@
 """CME Group daily settlement volume / open-interest collector (Phase 7.1, collector 4).
 
+*** RETIRED 2026-07-15 — DO NOT RUN. Retarget at Databento before reuse. ***
+
+This module scrapes cmegroup.com, which AMC may not do. CME's Data Terms of Use
+prohibit using "scripts, software, spiders, robots ... to navigate, access, copy
+in bulk, retrieve, harvest, index, search or analyze any portion of the Website"
+without prior written permission, and limit access to "personal use for
+non-commercial purposes" — expressly excluding software development, model
+training, and "providing archived or cached data sets". AMC's use fails all three
+independently (commercial dealer; this codebase trains models; append-only DuckDB
+capture is the named cached-dataset case), and running it by hand does not cure
+the commercial-use bar. The 403 seen from this machine is Akamai enforcing
+Advisory Chadv23-364 (effective 2024-01-08), not a technical fault to route
+around; defeating it by impersonating a browser is out of the question. Removed
+from the ``run_collectors`` registry so the nightly timer stops attempting it.
+
+Nothing was lost. The series is **backfillable** — Databento retains the
+``statistics`` schema (settlement, open interest, cleared volume) permanently —
+so ``cme_daily`` is on no clock, and it never wrote a row. Replacement:
+``statistics`` on ``GLBX.MDP3``, ``stype_in=parent``, symbols
+``GC.FUT,SI.FUT,PL.FUT,PA.FUT``; ~$1/month, no market-data licence (the 24-hour
+embargo keeps historical pulls outside real-time licensing). Databento also
+carries the P/F distinction natively in ``stat_flags`` and dates each statistic's
+knowability via ``ts_recv``, which is strictly better provenance than the
+``pulled_at`` proxy below. The parsing, row semantics, and honesty flags in this
+module survive the source swap; the HTTP layer and endpoint map do not.
+
+Everything from here down describes the retired website source, kept for the
+endpoint semantics (notably the Settlements OI trap) that the Databento port
+should preserve. See journal.md, 2026-07-15.
+
 Forward-capture leg of the spliced volume/OI series: the funded Databento
 backfill supplies official history, this collector records each day's public
 figures as they appear. Products: GC, SI (COMEX) and PL, PA (NYMEX). Rows land
@@ -8,8 +38,7 @@ one row per contract month plus one ``AGG`` row per product/day (sums across
 contract months — the roll-neutral series 7.6 consumes).
 
 Endpoints (public JSON web services behind cmegroup.com; verified 2026-07-12
-via live-archive snapshots through 2026-06 — CME blocks datacenter IPs, so the
-collector must run from AMC's own machine):
+via live-archive snapshots through 2026-06):
 
 - Volume/OI by month (P = preliminary, same evening; F = final, next business
   morning; both remain served once published, so a run captures both)::
@@ -36,10 +65,7 @@ is never attached to a final row. ``is_realtime`` is True when the pull
 happened within ``REALTIME_MAX_LAG_DAYS`` of the trade date — anything older
 is retro capture and stays second-class, permanently.
 
-Run as:
-    uv run python -m metals.data.cme_daily                       # latest trade date
-    uv run python -m metals.data.cme_daily --trade-date 2026-07-10 --products GC SI
-    uv run python -m metals.data.cme_daily --check-gaps --gap-days 10
+Run as: nothing. See the retirement notice above.
 """
 
 from __future__ import annotations

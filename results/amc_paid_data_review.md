@@ -54,7 +54,27 @@ Four principles governed the verdicts:
 
 ---
 
-## Buy 1 — Databento: the CME historical backfill
+## Buy 1 — Databento: the CME data, both legs
+
+**Scope widened 2026-07-15.** This was written as a *historical* backfill, on the
+assumption that ongoing daily figures would be captured free by scraping CME's
+website. That assumption failed twice over: CME's Data ToU bar the scrape for AMC's
+use outright (commercial, model-training, and cached-dataset grounds — see the
+revised Collector 4 in `amc_data_acquisition_program.md`), and the series turned out
+to be **backfillable anyway**, since Databento retains `statistics` permanently.
+Databento is therefore the source for both legs. The forward leg is ~**$1/month**
+(a `StatMsg` is 64 bytes; ~27 MB/month for four parent symbols) and needs **no
+market-data licence** — the 24-hour embargo keeps historical pulls outside real-time
+licensing, and the $35,220/yr historical distribution fee is Databento's vendor
+obligation, not a subscriber's. Live data would cost ~$900/month (GC/SI on COMEX and
+PL/PA on NYMEX = two DCMs; non-display "Research and Analysis" doubles accordingly)
+to buy back one day of freshness — indefensible for a days-to-weeks float.
+
+**One check before signup.** The 2010-06 → 2017-05 leg is reconstructed from CME's
+legacy MDP2 feed (tag-52 timestamps with `F_BAD_TS_RECV`; pre-2015-01-20 `stat_flags`
+off-spec). Whether `statistics` is complete across that era is unconfirmed, and it is
+the leg being paid for. Ask Data Sales first — the free credits expire six months from
+**signup**, not from first use, so signing up before you are ready to pull burns them.
 
 **What it is.** Databento resells the official CME market-data feed at usage-based
 (per-gigabyte) prices with no subscription required for historical downloads. Its
@@ -108,11 +128,26 @@ two users; basic API (application programming interface) access. Heavier API use
 metered on top (~$25/mo minimum; $95/mo at 50k calls).
 
 **Why it clears the bar.** The verification pass confirmed this is a genuine gap, not a
-duplicate: Collector 2 scrapes posted **retail asks**; nothing free covers the
-**wholesale bid** — the side AMC actually trades against when exiting inventory. Value
-arrives on day one with no modelling: are the coin desk's buy/sell quotes and inventory
-marks in line with the wholesale market? It also anchors generic/bullion-coin bid levels
-for the spread-floor work.
+duplicate: nothing free covers the **wholesale bid** — the side AMC actually trades
+against when exiting inventory. Value arrives on day one with no modelling: are the coin
+desk's buy/sell quotes and inventory marks in line with the wholesale market? It also
+anchors generic/bullion-coin bid levels for the spread-floor work.
+
+**Scope corrected 2026-07-16 — Greysheet is bigger than this section assumed, and
+Collector 2 is gone.** The ToU audit (journal.md, 2026-07-16) found that Collector 2's
+retail scrape was never licensed for AMC's use and retired it — so the "Collector 2
+scrapes posted retail asks" premise no longer holds. It also found the CDN **Public API
+V2** exposes **CPG retail values in addition to wholesale bid/ask**, so this subscription
+is not only the wholesale benchmark: it is the licensed path to *both* sides. Two
+consequences: (1) Greysheet is now the replacement for most of the coin-premium panel,
+not a complement to it; (2) one construct caveat — CPG retail is CDN's *published
+benchmark*, not APMEX's/JM Bullion's *posted asks*, so dealer-specific spread
+intelligence is not reconstructable from it (better-grounded for spread floors, but a
+different number; dealer-specific asks need written consent from the dealers). **Before
+subscribing, read the API Terms of Use / License Agreement for commercial use, storage
+into a local database, and model training** — a paid API is not automatically clear on
+any of them (the CME lesson). The `licensing/1_greysheet_cdn.md` draft asks sales those
+three questions in writing.
 
 **Caveats.** Skip the Pro tier ($1,850/yr, a dealer trading network — overkill at AMC's
 volume). The depth of *downloadable historical* bid data is not stated publicly — worth

@@ -24,14 +24,21 @@ deferred. **Phase 7 — the AMC program — is scoped** (`plans/phase_7_amc_prog
 Phase 5 translated into AMC's decisions in
 `results/phase5_amc_business_implications.pdf`, and the start-now
 data-acquisition program (non-backfillable series: AMC ledger, coin premiums, search
-interest, CME open interest, event calendars; expanded 2026-07-12 to seven collectors
+interest, event calendars; expanded 2026-07-12 to seven collectors
 in plan §7.1 — adding JM PGM/rhodium prices and premium-side forward capture) in
 `results/amc_data_acquisition_program.md`; paid-data buy/skip review (prices verified
 2026-07-12: Databento CME backfill + Greysheet wholesale benchmark; sentiment feeds
 and enterprise assessments ruled out) in `results/amc_paid_data_review.md`.
 Collectors are append-only with
 `source`/`pulled_at` provenance and real-time flags; anything from AMC's ledger
-stays on the local machine.
+stays on the local machine. **CME is licensed, not scraped (2026-07-15):** its
+Data ToU bar scripted retrieval and limit access to personal non-commercial use —
+AMC's use fails that on commercial, model-training, *and* cached-dataset grounds,
+and manual download does not cure it. Open interest is also **backfillable**
+(Databento retains `statistics` permanently), so `cme_daily.py` is on no clock and
+retargets to Databento. Before adding any collector, check the source's ToU for
+AMC's actual use, and never defeat a block by misrepresenting the client — plan
+§7.7 carries the gate.
 
 ## Commands
 
@@ -64,10 +71,16 @@ everything; all DB I/O goes through `data/db.py`.
   (geopolitical risk), `gdelt.py` (GKG news via BigQuery → the ~63M-row `headlines`
   table that dominates the DB). Phase 7.1 collectors (2026-07-12): `amc_ledger.py`
   (local-only importer for AMC's books), `coin_premiums.py`, `trends.py`,
-  `cme_daily.py`, `jm_pgm.py`, `consensus.py`, `bls_calendar.py` — scheduled via
-  `scripts/run_collectors.py`, append-only with `pulled_at`/`is_realtime` honesty
-  flags (never demoted on upsert). Schema changes live in `migrations/` (apply via
-  `runner.py`).
+  `cme_daily.py`, `jm_pgm.py`, `consensus.py`, `bls_calendar.py` — append-only with
+  `pulled_at`/`is_realtime` honesty flags (never demoted on upsert). Schema changes
+  live in `migrations/` (apply via `runner.py`). **ToU status (2026-07-16):** the
+  automated scrapers were all found to bar AMC's use. `run_collectors.py` now
+  schedules **nothing** — its timers are paused (`install_schedule.sh` enables only
+  backups). `cme_daily.py` (retired; → Databento) and `trends.py` (now a manual
+  `multiTimeline.csv` importer, `amc_ledger`-style) are out of the registry;
+  `coin_premiums`/`consensus`/`jm_pgm` remain registered but barred-pending-licence
+  and their timers are disabled. See `plans/phase_7_amc_program.md` §7.7 and
+  `journal.md`.
 - **`features/`** — `returns.py`/`macro.py`/`spreads.py` build features; `assemble.py`
   + `loaders.py` turn DuckDB tables into wide ML matrices; `leakage.py` is the
   mandatory look-ahead guard. Phase 3 text: `embeddings.py` (sentence-transformers,
@@ -90,6 +103,12 @@ a CUDA 12.4 image); CPU runs are slow.
 - **No look-ahead leakage.** Every feature pipeline must pass `features/leakage.py`
   before training; a day's text must strictly precede the forward returns it predicts.
 - **Walk-forward CV only — never a random split.**
+- **Filter `quarantine_reason IS NULL` when reading collector tables.** The
+  `coin_premiums`, `macro_consensus`, `search_interest`, and `pgm_prices` tables
+  carry a `quarantine_reason` column (migration `010`): non-NULL means the row was
+  captured from a source whose ToU bars AMC's use (2026-07-16 audit) and must be
+  excluded from training and shipped analysis until a licence clears it. NULL =
+  usable. Any loader that grows to read these tables must apply the filter.
 - **Every model run logs to the eval harness** (`eval/harness.py`).
 - **Append a `journal.md` entry after every working session** (it's the running
   research log; ~45 KB and growing).
@@ -104,7 +123,8 @@ a CUDA 12.4 image); CPU runs are slow.
   resolved by renaming the artifacts migration to `006_phase3_artifacts.sql`
   (2026-07-02); DBs that ran it under the old stem keep a stale
   `005_phase3_artifacts` row and re-run the renamed file as a no-op (it is fully
-  `IF NOT EXISTS`). Next free number: `010`. Never put a `;` inside a migration
+  `IF NOT EXISTS`). Next free number: `012` (`010_quarantine_flag` +
+  `011_search_interest_sub1` applied 2026-07-16). Never put a `;` inside a migration
   comment — whole-file execution silently truncates at it.
 - **GDELT corpus limits** are documented in
   `results/phase3_gdelt_data_assessment.md` — read it before doing anything with text
