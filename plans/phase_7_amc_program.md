@@ -118,6 +118,16 @@ backup own the critical path; 6–7 must not extend it.
 
 ## 7.2 FOMC hedge playbook, live again (~3 days; first analysis job)
 
+**Status 2026-07-16:** the ΔDGS2 leg is built — `fomc_yield_surprises` (migration
+012, module `data/fomc_dgs2.py`) materializes the Hanson-Stein daily 2y-yield
+change for 172/177 FOMC meetings, 2007-2026, extending past the 2023-12
+Bauer-Swanson end. Validation vs MPS on the overlap: corr **+0.43** (MPS_ORTH
++0.39), +0.47/+0.42 for 2015+, ~63% sign agreement — a usable but noisy proxy, as
+expected for a daily-close vs intraday window. Remaining: re-run LP/DML/CATE on
+2015-2026 with expanding-window (as-of) thresholds, then ship the hedge playbook.
+The intraday GSS composite, the <0.7 Stage-2 gate, and the IV appendix stay
+Databento-blocked.
+
 Extend the monetary-surprise series past its 2023-12 end with two measures
 built in the same pass: (a) the FOMC-day ΔDGS2 (Hanson–Stein convention) as
 the same-evening live stand-in, and (b) the funded intraday upgrade — a

@@ -124,8 +124,9 @@ a CUDA 12.4 image); CPU runs are slow.
   resolved by renaming the artifacts migration to `006_phase3_artifacts.sql`
   (2026-07-02); DBs that ran it under the old stem keep a stale
   `005_phase3_artifacts` row and re-run the renamed file as a no-op (it is fully
-  `IF NOT EXISTS`). Next free number: `012` (`010_quarantine_flag` +
-  `011_search_interest_sub1` applied 2026-07-16). Never put a `;` inside a migration
+  `IF NOT EXISTS`). Next free number: `013` (`010_quarantine_flag`,
+  `011_search_interest_sub1`, `012_fomc_yield_surprises` applied 2026-07-16).
+  Never put a `;` inside a migration
   comment — whole-file execution silently truncates at it.
 - **GDELT corpus limits** are documented in
   `results/phase3_gdelt_data_assessment.md` — read it before doing anything with text

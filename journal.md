@@ -2206,3 +2206,50 @@ this branch's HEAD with a message noting Phases 0-6 complete + Phase 7.1 data
 program in progress (barred/paused collectors, documented). The human-action
 critical path (licence emails, ledger conversation, first Trends export) is
 unchanged and still only the user's to take.
+
+---
+
+## 2026-07-16 (later) — Phase 7.2 started: the ΔDGS2 same-evening FOMC surprise
+
+Kicked off 7.2 (the first analysis job) with its fully-unblocked slice: the ΔDGS2
+monetary-surprise proxy. (The intraday GSS composite, the Stage-2 encoder gate,
+and the IV appendix all need Databento and stay parked with the paused paid
+sprint.) Also, prerequisites: v1.0 was tagged and pushed — `main` fast-forwarded
+to the Phase 6 close-out HEAD (also carrying up the one local-only commit 796b115),
+`v1.0` on origin.
+
+- **`fomc_yield_surprises` (migration 012) + `data/fomc_dgs2.py`.** For each FOMC
+  announcement day, the Hanson-Stein (2015) daily change in the 2-year Treasury
+  yield (DGS2 close − prior DGS2 trading-day close, in bp; a rise = hawkish).
+  Derived from `events(FOMC)` ⋈ `macro(DGS2)`, materialized with vintage
+  provenance. **172 of 177 meetings, 2007-01-31 → 2026-04-29.** The 5 exclusions
+  are the 4 weekend/holiday emergency actions (Treasuries closed — no daily yield)
+  + the 2026-06-17 meeting pending the next FRED DGS2 refresh — excluded, not
+  silently nulled. Prior-trading-day alignment uses a window LAG over the DGS2
+  observation index (Monday meetings difference against the prior Friday), never
+  calendar −1. Never-demote upsert (a genuine meeting-evening capture's pinned
+  values survive a later backfill).
+- **Why it exists:** Bauer-Swanson MPS (`fomc_surprises`) is a static academic
+  panel ending 2023-12, leaving ~21 recent meetings with no surprise measure.
+  ΔDGS2 is the free, same-evening stand-in for the (Databento-blocked) intraday
+  composite, computable any meeting evening from the routine FRED refresh, and it
+  spans the meetings B-S doesn't.
+- **Validation vs MPS (the load-bearing result):** on the overlap, ΔDGS2 corr
+  **+0.43** with MPS (+0.39 MPS_ORTH); +0.47/+0.42 for 2015+; **sign agreement
+  only ~63%**. Honest read: the daily close-to-close proxy captures a real but
+  noisy slice of the monetary signal (a full session absorbs CPI/jobs/supply news
+  alongside the FOMC), so it is a coverage-extending robustness treatment, clearly
+  inferior to the intraday measure. The ~1-in-3 sign disagreement is the caveat to
+  carry into the LP re-run — ΔDGS2 hawkish ≠ intraday hawkish on a third of days.
+- **Gate:** 7 new tests (delta + Fri-prior alignment, sign convention, holiday
+  exclusion, backfill-not-realtime, realtime-preserved-on-backfill, idempotency,
+  MPS validation). ruff + mypy (48 files) clean.
+
+**Remaining for 7.2:** re-run LP/DoubleML/CATE on 2015-2026 with ΔDGS2 as the
+treatment and **expanding-window (as-of) thresholds** (closing the in-window
+tercile caveat Phase 2/5 carried — the hawkish-FOMC scenario was never in the
+Phase 6 holdout re-thresholding), then ship the per-meeting hedge playbook
+(`results/phase7_fomc_hedge_playbook.{csv,md}`: hedge notional per $100k of
+Au/Ag/Pt float, Pd excluded on the evidence, dovish not hedged). Anchor to build
+on: DML hawkish-FOMC gold −1.43% at h=5 (Ag −2.95%, Pt −1.68%), era-decaying so
+the 2015-2026 re-run gives modern-calibrated (smaller) magnitudes.
