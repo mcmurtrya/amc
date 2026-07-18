@@ -2417,3 +2417,98 @@ runner + dry-run cost estimator; `checks.py` coverage/known-event-recall/date-bl
   tag on 2019-09-22 (step function); no re-pull recovers pre-2019 titles. **Language:** among
   ECON_GOLDPRICE title-era rows only 36.4% are English (Ar 24%, Zh 14%, Tr 8%, …) — the
   English keyword gate is a real, documented recall limitation for non-English silver/PGM.
+
+## 2026-07-18 — "Unlimited data" question → derive-vs-buy program + spread-floor spec
+
+Owner asked, in sequence: what datasets would AMC want with unlimited resources → the five
+highest-value moves → which are feasible to buy/derive/scrape + what data engineering
+uncovers from paid data → write it up + spec the highest value. Answered via three
+multi-agent workflows (enumerate → adversarial-critique → synthesize, each filtered against
+the four hard priors P1–P5). No new data pulled, no collector/licence action pushed — analysis
++ two deliverable docs only.
+
+- **Headline finding (holds across all three workflows):** most of the value is NOT a product
+  you buy. Highest return = **deriving** constructs vendors don't sell as a field (implied-vol
+  surface, lease-rate/squeeze alarm, retail-vs-wholesale premium wedge, EVT tail library) from
+  **owned** data (Databento CME, Greysheet, FRED, COT), then **joining onto AMC's ledger**
+  (dollar-VaR on the actual book, realized-premium reconciliation, per-piece converter exit).
+  Of net-new *buys*, exactly one is unambiguous: **deep rhodium/PGM history** (~$200–500,
+  JM/Anglo + CPM Yearbook) — rhodium has no exchange price so it's the sole tail calibration.
+- **Feasibility triage of the 5 flagship moves:** only rhodium/PGM history is a clean buy;
+  Eco Cat converter DB + Norgate are cheap-but-conditional; wholesale two-way feed is
+  account-gated; dealer-specific **stock-out flags** are barred/non-backfillable → forward-
+  capture-under-consent, not a purchase. Enterprise alt-data (satellite, SFA, Bloomberg-as-
+  signal, multi-dealer consortium) all fail on P2/P4/budget or their own falsified use.
+- **Honest no's carried through (P1/P3/P4):** shadow-positioning nowcast, options max-pain,
+  LLM tone scores, sold-through demand nowcast = falsified sentiment/regime class; FOMC-window
+  settle-vs-VWAP is mechanically confounded (metals settle ~1:30pm ET, before the 2:00pm
+  statement); vendor "point-in-time" consensus is retro-generated (FXMacroData trap). One
+  landmine flagged: verify the Greysheet ASK moves independently of the bid before shipping
+  any spread-stress gauge.
+- **Deliverables (both in `results/`, companions to the paid-data review + acquisition
+  program):** `amc_derive_vs_buy_engineering.md` (the full program — acquisition-mode triage,
+  derived-signal catalog by decision, leakage discipline, build order) and
+  `amc_spread_floor_engine_spec.md` (implementation spec for the highest-value build:
+  `max_buy = exit_floor − k·tail_vol·√(float_days) − carry`, book-level dollar-VaR, grounded
+  in the real ledger schema `amc_scrap_lots`/`amc_coin_trades`, `leakage.py` guards, harness
+  logging, migration 013, and a graceful-degradation table so it ships on owned data now and
+  sharpens as rhodium history / Databento / Greysheet / the pending ledger land). The
+  dollar-VaR-on-book join is the one term that genuinely blocks on the ledger (correct — it's
+  definitionally about AMC's own book); everything else has a documented fallback.
+
+## 2026-07-18 (later) — Spread-floor engine, increment 1 built + verified
+
+Built the first increment of the highest-value construct from
+`results/amc_spread_floor_engine_spec.md` — the market-derived inventory spread floor on
+already-owned data. `max_buy = exit_floor − cushion − carry`, `cushion = k·tail_vol·√float·spot`.
+Classical downside vol only (Phase 6 blessed it; no ML/regime feature). Every term degrades to
+a flagged fallback so nothing ships as if calibrated.
+
+- **Files:** migration `013_spread_floor.sql` (`spread_floor_daily` + `book_var_daily`);
+  `GVZCLS` added to `configs/fred_series.yaml` and ingested (4,560 rows, 2008-06→2026-07);
+  `features/inventory.py` (ledger float from `amc_scrap_lots`, assumed-10-trading-day fallback
+  since the ledger is still empty); `models/spread_floor.py` (the engine + harness-logged `run`);
+  `tests/test_models_spread_floor.py` (14 tests).
+- **Terms (all fallback in increment 1):** tail_vol = downside deviation `sqrt(mean(min(r,0)²))`,
+  60d trailing — EXCEPT gold, which uses GVZ implied where available (`vol=implied`, 4,519 of
+  4,818 gold rows; pre-2008-06 falls back to realized); `k=1.645` normal-approx; float=assumed 10td;
+  carry=rf-only (DGS3MO, trading→calendar day-count); exit=fixed haircut (Au 2/Ag 5/Pt 5/Pd 8%).
+- **Result:** 17,629 rows, 2007-03→2026-05, 4 metals. Latest floors — gold $4,523→$4,073 (−10.0%),
+  silver $76.2→$61.5 (−19.3%), platinum $1,940→$1,591 (−18.0%), palladium $1,360→$1,087 (−20.1%).
+  Discounts reconcile exactly to `haircut + k·vol·√float`. Wide by design — this is the labelled
+  uncalibrated baseline; it tightens hard once real float (likely <10td), real exit (Greysheet/own
+  payable), and an EVT-calibrated k replace the placeholders. `book_var_daily` intentionally EMPTY
+  (emitted only when float≠assumed — a book VaR on a made-up float is worse than none).
+- **Leakage:** the floor is a *contemporaneous* decision object (no forward target), so the guard is
+  `assert_chronological` + strictly-trailing windows (`min_periods=window`), not
+  `assert_target_strictly_future`. Documented in the module.
+- **Quality:** ruff clean, mypy clean (56 files), full suite **543 passed**. Engine registers each
+  run to the eval harness (`model_type='spread_floor'`); no `log_predictions` (no actuals yet — the
+  ledger backtest is a later increment).
+
+## 2026-07-18 (later still) — Roadmap status table reconciled to current state
+
+Doc hygiene only, no research content or code changed. The `plans/00_roadmap.md` status
+table had drifted to "as of 2026-07-12" — pre-v1.0, pre-ToU-audit, and missing Phase 8.
+Reconciled it against verified ground truth (the git `v1.0` annotated tag, the two project
+memories, and this journal) so the table matches reality.
+
+- **Header:** "as of 2026-07-12" → 2026-07-18.
+- **Phase 4:** "Not started" → **Deferred (re-scoped)** — the numeric-only optional experiment,
+  off the critical path.
+- **Phase 6:** "core done; remaining 6.10/6.11 + v1.0 tag" → **Complete (2026-07-16), v1.0
+  tagged** (annotated, local/unpushed); 6.10 repro package and 6.11 cleanup both done.
+- **Phase 7:** "Scoped (2026-07-12), five-collector" → **Scoped; data-acquisition track PAUSED
+  (2026-07-16 ToU audit)** — seven collectors, timers off, ~171k rows quarantined (migration
+  010), ledger is the gate; the analysis portfolio is unblocked and 7.2's ΔDGS2 leg is built.
+- **Phase 8:** added a new row — **Scoped 2026-07-17 (design only, no code)**; blocking prereq
+  `daily_text_features.mean_embedding` is all-NULL and must be rematerialized.
+- **Test count:** 282 (2026-07-11) → **543 all-pass (2026-07-18**, per the spread-floor entry
+  above; ruff + mypy clean), with 507 noted as the v1.0-tag count (delta = the in-progress
+  7.3 spread-floor work).
+- **Prose:** added a one-line pause note to the "## Phase 7: AMC program" paragraph pointing at
+  the 2026-07-16 ToU audit and §7.7, so the narrative no longer describes the collector program
+  as if it were live.
+
+The one artifact still ahead of committed state is the roadmap's 543 count, which includes the
+untracked Phase 7.3 spread-floor engine; that is intentional and labelled as in-progress.

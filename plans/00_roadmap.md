@@ -78,6 +78,8 @@ Out-of-sample year you never touched — typically the most recent 12 months. Qu
 
 Phases 0–6 answered *what moves metals prices*; Phase 7 turns the answers into operating decisions for **AMC Company**, the dealer the research serves (scrap Au/Ag/Pt/Pd buying with assay; gold coin & specie; structurally long inventory over a days-to-weeks float). Two tracks: (a) a start-now **seven-collector data-acquisition program** for non-backfillable series — AMC's own ledger, retail coin premiums, search interest, event calendars (`results/amc_data_acquisition_program.md`), plus JM PGM/rhodium prices and premium-side forward capture added 2026-07-12 with a small paid sprint (Databento CME data, Greysheet; ≤ ~$725/yr — `results/amc_paid_data_review.md`); CME open interest was removed from the non-backfillable list on 2026-07-15 (Databento retains it permanently; the website route is barred by CME's Data ToU regardless); (b) a decision-support portfolio (spread floors, a live FOMC hedge playbook, PGM liquidation alarms, crisis indices, demand models, macro-release movers §7.8), baseline-first with transformers only as pre-registered, kill-criterioned bake-offs. Full plan: `plans/phase_7_amc_program.md`; business translation of Phase 5: `results/phase5_amc_business_implications.pdf`.
 
+**Status (2026-07-16 ToU audit):** the automated collectors were found to bar AMC's commercial use, so the data-acquisition track is **paused** — timers disabled, already-captured rows quarantined (migration 010) — pending licences and AMC-ledger access (the gate, no ETA); the baseline-first analysis portfolio continues off the clean Phases 0–6 data (see §7.7 and `journal.md`).
+
 ---
 
 Each phase produces something usable on its own, so you can pause anywhere without throwing away effort. The three scenario methods come online at Phases 2, 3, and 5 respectively, and Phase 5 is where they get reconciled.
@@ -89,7 +91,7 @@ Each phase produces something usable on its own, so you can pause anywhere witho
 
 ---
 
-## Status as of 2026-07-12
+## Status as of 2026-07-18
 
 | Phase | Status | Notes |
 |---|---|---|
@@ -97,9 +99,10 @@ Each phase produces something usable on its own, so you can pause anywhere witho
 | 1 — Price + LightGBM baseline | Complete + cleanup | `BAA10Y` replaced license-restricted `BAMLH0A0HYM2`. Feature-importance pipeline added. Lean / lean_own feature sets reflect diagnostic finding that cross-ticker returns/vol block is net-negative for IC. |
 | 2 — Events + local projections | Complete | 176 FOMC events, Bauer-Swanson MPS_ORTH surprises, COT with Friday-close lag. Headline result: hawkish-FOMC IRF -1.5% on gold at h=5, sign-consistent across Au/Ag/Pt. |
 | 3 — Text + clustering | **Complete (merged to main 2026-07-11, PR #1)** — 139.9M-row GDELT corpus (2015-2026, titles backfilled), Option C tone+themes clustering, Opus-labelled 7-cluster taxonomy, pre-registered cluster-lift experiment | Lift readout: NO predictive lift at the primary target (GC=F h=5 rvol): rel ΔRMSE -0.37% vs -1.0% bar, 4/11 wins. Embedding gate (assessment §7) closed. Full narrative in results/phase3_writeup.md. |
-| 4 — Multimodal transformer | Not started | Unblocked once Phase 3 lands clusters and topic prevalences. |
+| 4 — Multimodal transformer | **Deferred (re-scoped)** | Re-scoped to a numeric-only optional experiment and deferred; off the critical path. Consistent with the program's finding that a tuned LightGBM beats transformers in honest OOS evaluation here (Phase 6). |
 | 5 — Causal ML + triangulation | **Complete (2026-07-11)** — DoubleML ATE/placebo (5.2-5.3), regime-CATE (5.4), sign-restricted SVAR (5.5), subsample stability (5.8), master scenario table (5.7/5.9), write-up (5.10) | Anchor finding triangulated 3 ways: hawkish FOMC → gold −1.4% at h=5 (LP/DML/SVAR agree; sign-stable across eras; amplified in the rate-hike-expectations regime). GPR + DXY-down fail robustness for documented measurement reasons. See results/phase5_triangulation.md + scenario_master.parquet. |
-| 6 — Validation and writeup | **Core + write-ups done** (validation `results/phase6_validation.md`; methodology 6.8; findings 6.9) | 63-day hold-out: classical baselines (GARCH/VAR) beat ML; regime/sentiment features hurt OOS. Remaining: 6.10 repro entry points, 6.11 cleanup + v1.0 tag. |
-| 7 — AMC program | **Scoped (2026-07-12)** — `plans/phase_7_amc_program.md` | Start-now five-collector data program (`results/amc_data_acquisition_program.md`) + baseline-first decision-support portfolio. Phase 5 business translation: `results/phase5_amc_business_implications.pdf`. |
+| 6 — Validation and writeup | **Complete (2026-07-16) — v1.0 tagged** (annotated; local, unpushed) | 63-day hold-out: classical baselines (GARCH/VAR) beat ML; regime/sentiment features hurt OOS. 6.10 repro package built + tested (`metals.refresh` / `metals.train` orchestrators, harness Parquet export, README repro section); 6.11 cleanup done (mypy 8→0, journal lessons extended). Validation `results/phase6_validation.md`; methodology 6.8; findings 6.9. |
+| 7 — AMC program | **Scoped; data-acquisition track PAUSED (2026-07-16 ToU audit)** — `plans/phase_7_amc_program.md` | Seven-collector start-now data program (`results/amc_data_acquisition_program.md`), but the ToU audit found the automated collectors bar AMC's commercial use → timers disabled, 171k captured rows quarantined (migration 010, filter `quarantine_reason IS NULL`), pending licences; AMC-ledger access is the gate (no ETA). The baseline-first analysis portfolio is unblocked and runs off the clean Phases 0-6 data; first job 7.2 (FOMC hedge playbook) — ΔDGS2 same-evening surprise leg built (migration 012). Phase 5 business translation: `results/phase5_amc_business_implications.pdf`. |
+| 8 — Self-supervised representation | **Scoped 2026-07-17 (design only, no code)** — `plans/phase_8_ssl_probing.md` | Low-rank joint factorization of the daily price + GDELT-news state, framed as insight not prediction (classical `LRJ-Metals` primary; deep `CoMPASS` encoder a gated Stage-B bake-off). Pre-registers a clean null as a first-class, shippable outcome. Blocking prereq: `daily_text_features.mean_embedding` is currently all-NULL and must be rematerialized. |
 
-**Cumulative test count: 282 — all pass (post Phase 5 scaffolding integration, 2026-07-11).**
+**Cumulative test count: 543 — all pass (2026-07-18); ruff + mypy clean. (507 at the v1.0 tag, 2026-07-16; the delta is in-progress Phase 7.3 spread-floor work.)**
