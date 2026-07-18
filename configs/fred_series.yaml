@@ -17,6 +17,11 @@ series:
   # Equity volatility
   - { id: "VIXCLS", name: vix_close, freq: daily }
 
+  # Gold implied volatility (Cboe GVZ) — the one forward-looking vol input to
+  # the spread-floor tail term. No exchange-published vol index exists for
+  # silver/PGM, so those metals fall back to classical downside realized vol.
+  - { id: "GVZCLS", name: gold_vol_index, freq: daily }
+
   # Inflation expectations (breakevens)
   - { id: "T10YIE", name: breakeven_10y, freq: daily }
   - { id: "T5YIE",  name: breakeven_5y,  freq: daily }
