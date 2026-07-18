@@ -207,7 +207,11 @@ pattern (append-only, provenance columns, real-time flags where relevant):
   minor-PGM feeds (Fastmarkets, Argus) unnecessary.
 - **World Gold Council Goldhub — India/China local premium series.** Free, daily
   (5-day rolling average, updated ~weekly), India from 2012, China from 2003: a regional
-  physical-demand thermometer behind coin-premium intelligence.
+  physical-demand thermometer behind coin-premium intelligence. **ToU gap corrected
+  2026-07-17 — see the Addendum below: "free" was mistaken for "cleared." Goldhub's
+  terms were never run against the AMC gate (commercial + model-training + cached-local)
+  and plausibly fail it as CME did; reclassified to barred-pending-written-consent.
+  Quarantine — do not build a loader — until a licence clears.**
 - **Cboe GVZ gold implied-volatility index** — free via the existing FRED collector,
   2008+; silver sibling VXSLV relaunched 2025.
 - **eBay Terapeak** — realized (not posted) bullion transaction prices, free with a
@@ -266,7 +270,8 @@ research inputs:
 | Databento options add-on | ~$50–300 one-time (verified model) | Spread-floor tail engine, event vol card | Buy with the same pull |
 | Greysheet Coin Dealer Digital | $299/yr (verified) | Coin desk pricing, premium ground truth | Subscribe now; email sales re: bid history |
 | JM PGM prices (incl. rhodium) | $0 (verified) | Converter-scrap pricing, PGM alarms | Add as Collector 6 |
-| Goldhub premia, GVZ, Terapeak snapshots, auction archives, PCGS API | $0 (verified) | Premium intelligence, vol card | Fold into Phase 7 collectors |
+| GVZ, Terapeak snapshots, auction archives, PCGS API | $0 (verified) | Premium intelligence, vol card | Fold into Phase 7 collectors |
+| WGC Goldhub India/China premia | $0 but **ToU unverified** | Premium intelligence | **Quarantine pending written consent** (2026-07-17 gap; Addendum) |
 | WorthPoint | $30–60 total, 1–2 months (secondhand) | Realized-premium backfill study | Defer until that study runs |
 | Norgate deep history | $270/yr recurring (verified; license refuted one-time framing) | Pre-2010 liquidation episodes | Defer; revisit on demonstrated need |
 | Portara pre-2010 intraday | ~$1.1–1.65k one-time (verified) | 1990s FOMC meetings | Defer indefinitely |
@@ -290,3 +295,152 @@ research inputs:
 - **Nothing here displaces the five collectors.** Purchased history complements forward
   capture; the single most valuable dataset in the program remains AMC's own ledger,
   and it costs nothing.
+
+---
+
+## Addendum 2026-07-17 — Phase 8 (SSL / representation) data & methods review
+
+Scoping Phase 8 (`plans/phase_8_ssl_probing.md` — a self-supervised low-rank
+representation of the daily price + GDELT-news state, framed as *insight*, not
+prediction) raised two questions this review had not asked: **(Q1)** does paid data
+relax the phase's "four hard facts," and **(Q2)** would a LoRA or distillation *method*
+be a better approach than buying data? A four-track researched-and-critiqued survey
+(web-verified where possible) answers both.
+
+**Bottom line.** **No in-budget, ToU-clean dataset relaxes the phase's binding
+constraint, and no LoRA/distillation method overturns it either.** The two buys above
+(Databento CME backfill, Greysheet) are unchanged and **no new purchase is justified.**
+The representation framing mints **three near-free builds and one compliance
+correction** — all below. The two governing truths: the binding constraint (the *joint*
+price+news sample) is unbuyable within budget + ToU + the Phase-6 prior; and LoRA /
+distillation change *capacity/transfer*, not *information*, so they cannot manufacture
+signal on an information-constrained problem.
+
+### The four hard facts (from the Phase-8 plan)
+
+1. Prices are **daily OHLCV only** (Yahoo), no intraday/tick.
+2. **No per-metal news** — GDELT themes are industry-wide and collapse to one shared
+   daily `market` news-state; the corpus has no article bodies, only titles/slugs (real
+   titles from 2019-09-22) + theme codes + tone.
+3. **Tiny joint sample** — news overlap caps the price+news model at ~2,800 daily rows
+   (GDELT 2015+), ~1,700 with real titles; ~99% autocorrelation ⇒ **~40–50 effective
+   independent regimes**, not thousands.
+4. **Adverse prior** (`phase6_validation.md`): classical baselines beat ML and
+   regime/sentiment features *hurt* OOS.
+
+### Q1 — per-fact data verdict
+
+- **FACT 1 (daily-only prices).** The fix — Databento full 1-minute history — is already
+  licensed (extending the FOMC-window slice is tens of dollars of usage, not a purchase),
+  but it is **decoration for AMC's decisions**: the float is days-to-weeks, FACT 2 caps
+  the joint sample regardless of price resolution, and the FOMC-window slice that matters
+  is already in Buy 1. Full intraday only feeds a *price-only* encoder — the class FACT 4
+  penalizes. `build`, but gated behind the price-only arm surviving Stage A.
+- **FACT 2 (no per-metal news).** No budget/ToU-clean feed exists. Entity-tagged
+  sentiment (RavenPack / Bigdata.com, ~2003+, ~$20–40k/yr academic = **non-commercial**,
+  the CME/personal-use trap) is a **richer version of the exact sentiment class Phase-6
+  falsified** (`lgbm_sentiment` Diebold-Mariano t = +2.90) — it starts from "no."
+  Reaffirms this review's sentiment skip. The only lever that touches FACT 2 is a
+  *method* over owned text — the LLM annotator (Q2), not a dataset.
+- **FACT 3 (tiny joint sample) — the binding constraint, and it is unbuyable.** Pre-2015
+  news that could extend the *joint* panel is enterprise-priced and ToU-barred
+  (Factiva/DNA five-figure+, LexisNexis; a university seat is personal-use only — no model
+  training, no caching), and every candidate lands on the falsified sentiment class.
+  GDELT 1.0 (1979+) is feature-incompatible (no GKG themes/tone before ~2013). And the
+  arithmetic dissolves the benefit anyway: ~3,000 extra rows buy only **~20–30 additional
+  *independent* regimes**, largely duplicating what free price-only history already spans.
+  A genuine, money-saving **null-for-buying**.
+- **FACT 4 (adverse prior).** No data "fixes" an empirical finding, but the class most
+  likely to *move* it is **orthogonal physical-market data Phase-6 never tested — mostly
+  free/already-flagged, not richer price or news** (two builds below).
+
+### The three near-free builds (zero new purchase; all gated by baseline-first)
+
+1. **LLM-as-annotator** — Claude reads each day's GDELT *titles* and emits per-metal,
+   event-typed features (~**$30–150 one-time**, clean ToU: Anthropic commercial terms
+   permit it, features are AMC's, nothing third-party redistributed/cached). *The only
+   lever on either question that adds information* — it recovers per-metal structure the
+   `market`-row collapse discards. Non-negotiable caveats: **(i)** titles-only ~1,700-row
+   run primary, and the PGM channel (where AMC most needs it) will be sparse-to-empty;
+   **(ii) parametric leakage** — a dated title lets the model "know what happened next";
+   date-blind the prompt, treat labels as hindsight-colored, cross-check a date-blinded
+   re-run (LLM output is not bit-reproducible even at temp 0 — a provenance liability);
+   **(iii)** its output *is* sentiment polarity + regime flags (two falsified classes), so
+   it must clear the same incremental-IC + block-permutation null as any news arm, and a
+   **clean null is the modal, shippable outcome** — its value is *closing* "should AMC buy
+   a news feed?" empirically.
+2. **Databento-derived lease/forward-rate alarm** — GC/SI calendar spread + ZQ (**$0** on
+   the owned licence, point-in-time clean — settlements are as-of-dated, avoiding the
+   FXMacroData retro-generation trap). Its durable value is an **operational tightness
+   alarm for a physically-long dealer** (silver 1-month lease ~35–40% in Oct 2025 is a
+   rare regime *event*), not a predictor: the instant the backfill adds contract months,
+   the calendar spread is inside `X_price` and the Phase-8 §2.1 incremental-IC residualizer
+   eats most of its "orthogonality." Term/calendar spreads *are* new versus the Yahoo-built
+   `spreads.py` panel, so a candidate feature starts from a **neutral** prior (not "no") —
+   pre-register a possible null IC. **Build from raw per-contract settlements with a
+   point-in-time roll**; a back-adjusted/stitched series injects roll look-ahead.
+3. **US Mint bullion-sales collector** — **$0**, US-gov open data, clean on all three ToU
+   grounds. Marginal (monthly collapses against FACT 3) and a supply-rationed *noisy
+   demand proxy* — a slow thermometer for the coin/premium arm, not a daily feature.
+
+### Compliance correction — WGC Goldhub reclassified
+
+This review listed **WGC Goldhub India/China premia** under "free upgrades adopted" with
+only "Free, daily" as justification — it **never ran WGC's ToU against the AMC gate.**
+Goldhub's commercial/scrape/derivative/cached-use terms plausibly fail the same three
+grounds CME failed. **Reclassified to barred-pending-written-consent — quarantine before
+any loader reads it** (no Goldhub table exists yet; do not build one). Also flagged in
+`plans/phase_7_amc_program.md` (collector 7 + the physical-tightness nowcast) and
+`plans/phase_8_ssl_probing.md`. The general lesson: *"free" is not "cleared" — a free
+source's ToU must still be run against AMC's actual use.* **Unverified:** the specific
+T&C wording was not independently re-fetched this session (PLAUSIBLE-pending-confirmation);
+the quarantine default holds either way.
+
+### Q2 — LoRA / distillation: capacity, not information
+
+**The distinction the question conflates.** LoRA's low-rank *weight update* (ΔW = B·A,
+parameter-efficient fine-tuning of a pretrained net) is a different object from the
+Phase-8 low-rank *representation* (the `PLSCanonical`/PCA axes you probe). LoRA does not
+produce that representation — so "use LoRA" is a proposal to fine-tune some external
+pretrained encoder, which re-imports every leakage/prior problem below. **These methods
+change how much of a pretrained prior you can transfer and how cheaply you can serve it;
+they add zero information about the metals that is not already in AMC's data or an
+external model's (undisclosed, probably contaminated) corpus.**
+
+Ranked verdict:
+
+| Method | Verdict | Why |
+|---|---|---|
+| **LLM-as-annotator** | **build** | Only lever that adds information; extracts latent per-metal structure from owned titles. Caveats above. |
+| TSFM frozen encoder (IBM Granite TTM; Datadog Toto as low-leakage control) | **defer** — one gated experiment | Apache-2.0, weights local. Best on-point study restates Phase-6 (TSFMs don't uniformly beat HAR). One null-tolerant *insight* run gated behind Stage A; never a forecaster, never fine-tuned on the backtest window. |
+| TSFM via LoRA (Chronos-2 / TimesFM-2.5) | **defer → skip** | Its one claimed edge — "the prior never saw your test window" — is unprovable and probably false (undisclosed corpora, plausibly include gold/commodities → FXMacroData-class contamination). Moirai is CC-BY-NC (fails commercial); TimeGPT sends data off-machine (fails). |
+| LoRA on a text encoder (MiniLM / FinBERT) | **skip** | The plan freezes the text tower by design; LoRA only sharpens a channel Phase-6 showed *hurts*. |
+| Distillation (all variants) | **skip** | Label-distillation is an inference-cost play at 2,800 rows; cross-modal text→price distillation *is* CoMPASS Stage B relabeled; TSFM→student re-imports the adverse prior. |
+
+**Dominant trap:** a pretrained external TSFM cannot be re-pretrained per walk-forward
+fold, so freezing-then-probing it re-imports the full-history pretrain leak (Phase-8
+§5.1) by construction. On the leakage-strict standard, unverifiable contamination = treat
+as contaminated — condemning every finance-touching corpus at meaningful power.
+
+### Action delta vs this review
+
+**No change to BUY.** New **BUILD** (near-free, gated): LLM-as-annotator (~$30–150),
+Databento lease-rate alarm ($0), US Mint collector ($0); conditional/gated: full-intraday
+extension and one TTM/Toto frozen experiment, both only after Stage A greenlights.
+**DEFER add:** WGC Goldhub (quarantine). Everything previously skipped stays skipped, now
+reinforced by the SSL/Phase-6 framing; LoRA-on-text and all distillation join the skip
+list. The modal outcome remains a **pre-registered null** — which is itself the shippable
+recommendation "use the classical vol baseline, don't buy a news feed, keep news out of
+the scenario context," reached for ~$30–150 rather than wondered about at ~$20–40k/yr.
+
+### Unverified flags (2026-07-17)
+
+- Two TSFM-vs-classical citations (arXiv 2511.18578; "Brini 2026") — **not independently
+  verified**; carried from the method tracks.
+- The TSFM "leak-safe prior" claim — asserted, **probably false**; corpora undisclosed.
+- A Chronos-2 partial-eval-contamination claim — carried as stated, not re-verified.
+- **WGC Goldhub T&C wording** — PLAUSIBLE-pending-confirmation; quarantine default holds.
+- Stooq / FirstRate ToU, Kronos licence — **unverified**; barred-pending-verification per
+  the CME default.
+- Databento pre-2017 `statistics` completeness — **unconfirmed** (the leg being paid for);
+  spot-check inside the free credits before paying (as in Buy 1).

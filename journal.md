@@ -63,6 +63,26 @@ A running log of work, learnings, surprises, and open questions. Add an entry at
   - Keep honesty on the row: `is_realtime` never demoted, `pulled_at` provenance,
     and `quarantine_reason` (barred-source rows) — downstream loaders must filter
     `quarantine_reason IS NULL`.
+  - **"Free" is not "cleared."** A free source's ToU must still be run against AMC's
+    *actual* use (commercial + model-training + cached-local) before adoption —
+    WGC Goldhub sat on the "adopted free upgrades" list for months without that
+    check (caught 2026-07-17) and plausibly fails it like CME. Default to
+    quarantine until a licence clears.
+- **Representation learning & pretrained models (Phase 8)**
+  - LoRA/distillation change *capacity/transfer*, not *information*. On an
+    information-constrained problem (tiny joint sample, no per-metal news) they
+    cannot manufacture signal — the only lever that adds information is extracting
+    latent structure from text already owned (an LLM annotator over GDELT titles),
+    and even that is capped to a modal null by the Phase-6 prior.
+  - A pretrained model's undisclosed training corpus is a point-in-time claim to
+    **test, not trust** (the FXMacroData rule applied to weights): a finance
+    time-series foundation model frozen-then-probed over 2015-2026 may have "seen"
+    the backtest era, and it cannot be re-pretrained per walk-forward fold — so it
+    re-imports the full-history pretrain leak by construction.
+  - The tautology guard that matters for a joint price+news representation: score
+    every news-arm claim as **incremental IC after residualizing on the full price
+    panel**; "factor→target IC" and "beats a raw-feature baseline" both credit
+    recovered price structure as discovery.
 
 ---
 
@@ -2253,3 +2273,147 @@ Phase 6 holdout re-thresholding), then ship the per-meeting hedge playbook
 Au/Ag/Pt float, Pd excluded on the evidence, dovish not hedged). Anchor to build
 on: DML hawkish-FOMC gold −1.43% at h=5 (Ag −2.95%, Pt −1.68%), era-decaying so
 the 2015-2026 re-run gives modern-calibrated (smaller) magnitudes.
+
+---
+
+## 2026-07-17 — Phase 8 scoped (SSL/representation) + paid-data & methods review
+
+Two design deliverables, no code shipped this session — both came out of
+multi-agent workflows (a design panel with adversarial critique, then a
+web-verified data/methods survey).
+
+- **`plans/phase_8_ssl_probing.md` (new).** Scoped a self-supervised low-rank
+  representation of the daily price + GDELT-news state, framed as **insight, not
+  prediction** (per the Phase-6 prior). Primary = a classical low-rank *joint
+  factorization* (`LRJ-Metals`: train-only whitened PCA per view → `PLSCanonical`
+  aligning a price-view against a news-view), which is the honest SSL for this
+  regime *and* the bar a deep encoder must beat. Deep Stage B (`CoMPASS`:
+  frozen-MiniLM text tower + ~25k-param price tower, InfoNCE) is gated behind Stage
+  A. Load-bearing guard: the **incremental-IC tautology test** — every news-arm
+  claim residualized on the full `X_price` panel (train-fit) before it counts, else
+  it just recovers price structure the panel already held. Blocking prereq:
+  `daily_text_features.mean_embedding` is ALL NULL — start with
+  `include_embeddings=False`, backfill day-means from the parquet cache later. Full
+  four-architecture scorecard + encoder-agnostic probing methodology
+  (PCA/CCA/CKA, walk-forward linear probes, block-permutation/bootstrap/BH-FDR,
+  pre-registration) in the plan appendices.
+
+- **Paid-data & methods review (folded into `results/amc_paid_data_review.md`
+  Addendum 2026-07-17, summarized in plan_8 §8).** Asked whether paid data or a
+  LoRA/distillation *method* relaxes the "four hard facts." Answer: **no.** The
+  binding constraint (the *joint* price+news sample) is unbuyable — pre-2015 news is
+  enterprise-priced + ToU-barred + falsified-class, and the row-count arithmetic
+  (~3,000 rows → ~20–30 duplicate independent regimes) dissolves the benefit anyway.
+  No new purchase; the two existing buys stand. Three near-free **builds** emerged:
+  an LLM-as-annotator over owned GDELT titles (~$30–150, the only lever that adds
+  *information*, modal outcome a shippable null), a Databento-derived lease-rate
+  **alarm** ($0, orthogonal to the Yahoo panel only — an operational tightness flag,
+  not a predictor), and a US Mint sales collector ($0). LoRA/distillation change
+  *capacity/transfer*, not information, so cannot overturn the facts; a pretrained
+  finance TSFM re-imports the full-history pretrain leak (can't re-pretrain per fold)
+  and its "clean prior" claim is unprovable. Added leakage traps 11 (external
+  pretrained-model / LLM-annotator parametric contamination) and 12 (back-adjusted
+  futures roll leakage) to plan_8 §5.
+
+- **Compliance correction (new ToU gap).** WGC Goldhub India/China premia were
+  listed as a free "adopted" upgrade in the paid review but their ToU was never run
+  against the AMC commercial/model-training/cached gate — plausibly fails it like
+  CME. Reclassified to **barred-pending-written-consent** and flagged in the paid
+  review, plan_7 (collector 7 + the physical-tightness nowcast), and plan_8. No
+  Goldhub table exists — do not build a loader until a licence clears. T&C wording is
+  plausible-pending-confirmation; the quarantine default holds regardless.
+
+Unverified flags carried through explicitly (two TSFM-vs-classical citations, the
+TSFM leak-safety claim, WGC T&C wording, Databento pre-2017 completeness) — recorded,
+not asserted. Nothing here re-litigates a settled verdict in the paid review; the
+representation framing reinforces the existing sentiment/enterprise skips rather than
+reopening them.
+
+## 2026-07-17 (cont.) — LLM-annotator schema v2 + Stage-0 pilot built
+
+Folded the annotation schema v2 into `plans/phase_8_ssl_probing.md` §8.1 and built the
+runnable Stage-0 feasibility pilot: new package `src/metals/annotate/`
+(`schema.py` frozen date-blind prompt + JSON output schema + prompt_hash; `titles.py`
+per-day load/filter/dedupe; `sample.py` stratified ~80-day sampler; `pilot.py` Batch-API
+runner + dry-run cost estimator; `checks.py` coverage/known-event-recall/date-blind-drift
++ report card) plus `scripts/annotate_pilot.py` (sample/estimate/run/check) and
+`tests/test_annotate_pilot.py` (8 offline tests). ruff + mypy (54 files) clean.
+
+- **The pre-filter finding (from a live DB smoke, the reason to smoke).** The GDELT theme
+  codes in `THEME_TO_METALS` cannot narrow to metals news: they map generic macro themes
+  (ECON_INFLATION, WB_1699 ~57% of corpus) so broadly that filtering on them leaves a
+  ~30k/day macro FIREHOSE (example "metal-relevant" titles were Chinese bank news, USD/JPY
+  forecasts — nothing to do with metals). Fix: narrow on a metal-keyword-in-title gate
+  (+ named PGM producers, + the gold-price theme). A theme intersection was tried and is a
+  proven **no-op** (has_macro is true for ~every keyword hit) — confirming the workflow's
+  own "theme codes are noise" finding. After the keyword gate, ~500–730 distinct
+  metal-naming titles/day remain (capped at 250), still with visible off-topic hits
+  ("Silver Alert", "Gold Quill Award") that only the LLM `relevant` flag +
+  `corpus_offtopic_fraction` diagnostic can sort — a Stage-0 finding, not a bug.
+
+- **Cost reality — corrects the earlier "~$30–150" claim (that assumed ~150 clean
+  titles/day; reality is ~250 capped, noisy).** Batch API (50% off). 80-day PILOT ×2
+  variants (blind + dated A/B): ~$30 Opus / ~$18 Sonnet / ~$6 Haiku. FULL 1,678-day
+  production run (single date-blind variant): ~$314 Opus / ~$188 Sonnet ($125 at intro
+  pricing) / ~$63 Haiku (batch). Output tokens dominate (a record per title). Two-tier plan:
+  Opus for the pilot (audit quality on 80 days), Sonnet/Haiku for the full extraction once
+  the schema validates; for the full run, switch to emitting records for RELEVANT titles only
+  (+ counts) to cut output ~5–10×. `scripts/annotate_pilot.py estimate` gives per-run numbers;
+  `--use-api-count` for exact input tokens.
+
+- **Leakage design baked in:** titles shown to the model under synthetic indices 1..N (never
+  the timestamp-encoding `headline_id`); the date is withheld in the primary "blind" variant;
+  the "dated" variant exists only to measure parametric-leakage drift (§5 trap 11). No paid
+  call is auto-run — `run` is user-invoked.
+
+- **Adversarial code review (3-lens workflow) found 5 real defects — all fixed** before any
+  paid run: (1) HIGH — Batch `custom_id` used `|`, which the API charset `[a-zA-Z0-9_-]`
+  rejects (would abort the whole batch) → `__`; (2) full-run cost extrapolation carried the
+  A/B `n_variants=2`, overstating production spend ~2× → full run now single-variant; (3)
+  cost estimate omitted the ~434-token JSON schema billed as input per request → added; (4)
+  false cache-savings note (782-token system prompt is below the 2–4k min cacheable prefix)
+  → removed; (5) FOMC sign-agreement keyed on exact roll-forwarded dates → now nearest within
+  ±4 days. ruff + mypy (54 files) + 8 tests clean after fixes.
+
+- **Title pre-filter reviewed (3-lens adversarial workflow) + high-value adjustments applied.**
+  Verdict ADJUST (foundations sound). Applied to `titles.py`: hardened de-dup key (HTML-decode
+  + NFKC + outlet-suffix/punctuation strip, unicode-safe — matters because the deliverable is
+  *counts*); a stop-phrase veto before the cap (silver alert / gold medal|coast|rush|standard
+  / platinum jubilee …) so junk can't evict real stories from the 250 slots; recall vocab
+  (iridium/ruthenium, PGM(s), Stillwater/Northam/Zimplats/AAP/JM/Heraeus, comex/lbma,
+  xpt/xpd/pplt/pall, anchored coin terms — bare coin/sovereign/eagle excluded); and a coverage
+  flag (`pre_title_era`, `n_titled`). Mean distinct titles/day ~696 → ~594. 13 tests, ruff,
+  mypy clean. **Time-stratified cap implemented** (`_select_capped`): reserves ≥50% of the 250
+  budget for the US session (13–22 UTC — FOMC/COMEX close), slack to the larger side, even
+  time-stride within each side — replacing the earliest-250-by-timestamp bias. Removing the cap
+  entirely (~2.8×, ~$860/$520/$175 batch) is a separate cost call.
+- **Corpus INGESTION gaps found (from the smoke), and characterized:** the title era has
+  contiguous holes bounded by full months — **2024-01 = only 2024-01-15** (Dec-2023 & Feb-2024
+  full at 31/29 days); **2025-06 stops at 06-14**. The contiguous-block-bounded-by-full-coverage
+  pattern ⇒ these are **our ingestion gaps, not GDELT upstream holes** (GKG is a continuous feed;
+  only 2017-08-29 is a known upstream empty day). **Recoverable** by a targeted BigQuery re-pull
+  (`backfill_gdelt.py` day-granular + the Extras/`page_title` wide pull, one process per month
+  window per CLAUDE.md OOM note). Prices (Yahoo) + macro (FRED) are unaffected — only the GDELT
+  text channel. Gap days flagged via `n_titled` (0 with `pre_title_era` False == corpus gap).
+- **Coverage-audit tool + coverage-aware sampler added.** `scripts/coverage_audit.py` maps the
+  whole corpus: **48 missing days in 4 windows** — 2017-08-29 (the one KNOWN GDELT upstream empty
+  day, not re-pullable), and 3 re-pullable ingestion gaps (**2024-01 = all but the 15th**,
+  **2025-06-15→07-01**); plus PARTIAL days (2015 start boundary, four Nov-2020 US-election-week
+  days at 800–3k rows vs 32k median, 2026-06-19 end boundary). Title-era `page_title`
+  completeness 98.8–99.6%/yr — backfill solid. `sample.py` refactored into a pure
+  `_assemble_sample` + a `_covered_days`-gated `draw_sample(require_coverage=True)` so gap days
+  are never drawn (a FOMC on a gap day is dropped, not rolled); confirmed the 80-day sample has
+  zero gap-window days. `_covered_days` drops the `page_title` filter (identical 2,416-day set,
+  10× faster: 33s→3s). Adversarial review (2-lens) found + fixed 4: (1) MEDIUM — the distinct-day
+  queries used `timestamp_utc BETWEEN start AND end`, whose varchar end casts to midnight and
+  dropped the corpus-max day's intraday rows (2026-06-19 was mis-flagged a gap → droppable from
+  the sample); factored all three into `_distinct_dates` with a half-open `>= start AND < end+1d`
+  boundary (verified 2026-06-19 now covered); (2) pgm/random now exclude ALL FOMC days (not just
+  the 20 selected) so they're event-free baselines; (3) coverage_audit PARTIAL uses per-YEAR
+  median (non-stationary volume was false-flagging early-era days); (4) its title-coverage
+  section honors `--since`. 15 tests, ruff, mypy clean.
+- **Slug boundary confirmed as an upstream GDELT feature, not our gap:** page_title 0.00%
+  across 59.8M pre-2019-09-22 rows, 99.47% after — GDELT began emitting the GKG `<PAGE_TITLE>`
+  tag on 2019-09-22 (step function); no re-pull recovers pre-2019 titles. **Language:** among
+  ECON_GOLDPRICE title-era rows only 36.4% are English (Ar 24%, Zh 14%, Tr 8%, …) — the
+  English keyword gate is a real, documented recall limitation for non-English silver/PGM.

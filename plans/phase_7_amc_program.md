@@ -99,7 +99,11 @@ backfilled. Full specification, rationale, and sequencing in
    wholesale maker feed (FizTrade-class) daily if AMC holds or opens a
    trading account. Goldhub India/China premia ride along as a standard
    backfillable ingest with publication-lag logging (`pulled_at` vs stated
-   date — the lag the 7.4 analyses must assume).
+   date — the lag the 7.4 analyses must assume). **Barred-pending-consent
+   2026-07-17:** WGC Goldhub's ToU was never run against the AMC gate
+   (commercial + model-training + cached-local) and plausibly fails it as CME
+   did — **do not build this ingest / quarantine any captured rows until a
+   licence clears** (see `results/amc_paid_data_review.md` Addendum 2026-07-17).
 
 **The paid sprint (same first week):** open the Databento account, verify
 pre-2017 completeness (the CME FIX flat-file reconstruction era) inside the
@@ -189,7 +193,9 @@ convert per-unit VaR into dollar VaR.
   backfill), commercial-vs-managed-money divergence; validated as a *nowcast*
   against real premium series: the WorthPoint one-time realized-premium
   backfill (~2006+, ~$30–60, episode-window extraction, retro-flagged
-  validation-only) plus Goldhub India/China premia, over the documented Au/Ag
+  validation-only) plus Goldhub India/China premia (**barred-pending-consent
+  2026-07-17 — excluded until licensed**; see `amc_paid_data_review.md`
+  Addendum), over the documented Au/Ag
   blowouts AND 2–3 PGM tightness episodes (2019–20 Pd squeeze, Mar-2020
   dislocation), with a permutation base-rate control; feeds buy-spread
   decisions and the premium work once 7.1/collector-2 data accrues.
