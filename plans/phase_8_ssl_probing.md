@@ -211,8 +211,8 @@ channels work *now*; the **embedding channel does not** until this backfill runs
   residualization, block permutation, block bootstrap, BH/BY-FDR.
 - `scripts/ssl_pipeline.py` — staged, `--only/--resume-from`, mirroring
   `scripts/phase3_pipeline.py`.
-- `src/metals/data/migrations/013_ssl_axis_cards.sql` — **optional** (next free id is
-  013). Probe *runs* log through the existing harness (`runs`/`run_predictions`), so a
+- `src/metals/data/migrations/014_ssl_axis_cards.sql` — **optional** (next free id is
+  `014`; `013` is now `013_spread_floor`). Probe *runs* log through the existing harness (`runs`/`run_predictions`), so a
   new table is only needed if you want to persist per-axis interpretation cards. Prefer
   harness + `results/` CSVs first.
 
