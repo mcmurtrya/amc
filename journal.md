@@ -2512,3 +2512,65 @@ memories, and this journal) so the table matches reality.
 
 The one artifact still ahead of committed state is the roadmap's 543 count, which includes the
 untracked Phase 7.3 spread-floor engine; that is intentional and labelled as in-progress.
+
+## 2026-07-18 (later still ×2) — Phase 8 Stage-A scaffold built (LRJ-Metals library layer)
+
+Built §7 step 1 of `plans/phase_8_ssl_probing.md`: the classical, no-torch first cut of the
+low-rank joint factorization, as a **pure library layer** — no driver, no harness wiring, no
+run performed. Verified against the brain2 revision of the plan (substantively identical to the
+governing copy; it differed only in a preamble cross-reference).
+
+- **`features/ssl_views.py`** — View A/B partition of a `build_context` frame
+  (`is_text_column` / `partition_columns` / `split_views`), plus `TrainOnlyImputer`
+  (train-prefix-only fill for missing-news days) and `assemble_views`
+  (`include_embeddings=False` for the first cut, since `daily_text_features.mean_embedding`
+  is still all-NULL — the standing Phase 8 prereq).
+- **`models/factor_ssl.py`** — per-view `StandardScaler` + whitened PCA + `PLSCanonical`,
+  **fit on `train_idx` only**; `transform` → `Z=[u_*, v_*]`; `canonical_correlations` read on
+  test; save/load mirroring `models/clustering.py`.
+- **`eval/probes.py`** — `incremental_ic` (the tautology guard: residualize both target and
+  news score on the full price panel, then correlate on test), `linear_probe` (Ridge/logistic,
+  tuned on val), `block_permutation_pvalue`, `block_bootstrap_ci`.
+- **Quality:** 16 new unit tests (imputer train-only-ness, planted-axis recovery, save/load,
+  incremental-IC in both directions, permutation/bootstrap). ruff + mypy clean; full suite
+  **559 passed** (was 543).
+
+Deliberately *not* done, and next: `scripts/ssl_pipeline.py` walk-forward driver, harness
+wiring, the `mean_embedding` rematerialization, and the **pre-registration** of the null
+(Phase 6's prior says the modal outcome is zero incremental lift — that gets written down
+before the first real run, not after).
+
+## 2026-07-18 (end of day) — Phases 9 & 10 scoped; design plans promoted into `plans/`
+
+Docs only; no research content or code. Two new event-study phases scoped as design-only
+briefings and promoted from the scratch `brain2/` staging dir into `plans/` as the governing
+copies, then wired into the roadmap.
+
+- **Phase 9** — real-yield event study (`plans/phase_9_realyield_event_study.md`).
+- **Phase 10** — PGM supply-shock event study (`plans/phase_10_pgm_supply_shocks.md`).
+- **`00_roadmap.md`** — status rows for both (scoped 2026-07-18, design only); noted the
+  Phase 8 Stage-A scaffold is built; test count → 559.
+- **Migration-id fix:** the optional Phase 8 axis-cards migration was numbered `013`, which
+  `013_spread_floor` had since taken → renumbered to **`014`**. Next free number is `014`
+  only until that one lands.
+
+## 2026-07-20 — Journal + plan-copy reconciliation (doc hygiene)
+
+Closed two gaps left open by the 2026-07-18 sessions. No code, no research content.
+
+- **Journal was two sessions behind.** The Stage-A scaffold and the Phase 9/10 promotion had
+  both been committed without entries (the log stopped at the roadmap reconcile, still quoting
+  543 tests against a committed 559). Both entries above were written retroactively from the
+  commits (`f16408d`, `5d4abfc`, `63b4857`) and are labelled as such by their dates.
+- **`plans/brain2/` removed.** It was an untracked staging dir. `phase_9_*` and `phase_10_*`
+  were byte-identical to the promoted copies. `phase_8_ssl_probing.md` was **not** redundant —
+  it was a *newer* revision, differing only at lines 4–17 (the rest byte-identical modulo
+  CRLF): a corrected status line plus a "Companion (general-design treatment)" paragraph
+  reconciling this plan with the external brain2 wiki. That preamble was ported into the
+  tracked `plans/phase_8_ssl_probing.md` (with the status further updated to
+  "Stage A scaffolded", which neither copy said) before the dir was deleted.
+- **Dangling reference flagged, not hidden.** The ported paragraph points at
+  `../../brain2/wiki/...`; that wiki exists nowhere under `/home/mcmur` on this machine. The
+  paths are kept as provenance and annotated inline as non-resolving rather than quietly
+  dropped — if the brain2 repo lives on another machine or is yet to be created, the
+  cross-reference should be re-pointed at its real location.
