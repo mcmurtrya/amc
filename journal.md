@@ -2540,37 +2540,105 @@ wiring, the `mean_embedding` rematerialization, and the **pre-registration** of 
 (Phase 6's prior says the modal outcome is zero incremental lift — that gets written down
 before the first real run, not after).
 
-## 2026-07-18 (end of day) — Phases 9 & 10 scoped; design plans promoted into `plans/`
+## 2026-07-18 — Phase 8 cross-referenced to the brain2 design wiki (reconciliation; docs only)
 
-Docs only; no research content or code. Two new event-study phases scoped as design-only
-briefings and promoted from the scratch `brain2/` staging dir into `plans/` as the governing
-copies, then wired into the roadmap.
+> Recovered 2026-07-20 from the OneDrive clone (commit `ce62983`), which is where this
+> session actually ran. Original text, unedited.
 
-- **Phase 9** — real-yield event study (`plans/phase_9_realyield_event_study.md`).
-- **Phase 10** — PGM supply-shock event study (`plans/phase_10_pgm_supply_shocks.md`).
-- **`00_roadmap.md`** — status rows for both (scoped 2026-07-18, design only); noted the
-  Phase 8 Stage-A scaffold is built; test count → 559.
-- **Migration-id fix:** the optional Phase 8 axis-cards migration was numbered `013`, which
-  `013_spread_floor` had since taken → renumbered to **`014`**. Next free number is `014`
-  only until that one lands.
+The Phase-8 SSL design has a modality-agnostic sibling in the separate **brain2** research
+wiki (`../../brain2/`) — the "colleague's design" behind Appendix A's four scored
+architectures was developed there, from the SSL/vision literature, without this project's
+data constraints. Reconciled the two so they stop drifting and quietly contradicting each
+other. **No code, data, or DB touched — documentation only.**
 
-## 2026-07-20 — Journal + plan-copy reconciliation (doc hygiene)
+- **brain2 side (edited there):** `wiki/synthesis/ssl-for-market-structure-probing.md` → v4
+  and `cross-asset-pretraining.md` → v2 now open with a "Grounding" section stating our four
+  hard facts (daily-only Yahoo prices / no intraday; GDELT collapses to one market-wide row,
+  no per-metal signal; ~2,800 joint rows ⇒ ~40–50 effective regimes; the Phase-6 adverse
+  prior) and the acquisition null from `results/amc_paid_data_review.md` (Addendum 2026-07-17).
+  New reference node `wiki/reference/amc-metals-case-study.md` captures this project's
+  infrastructure + findings (Phase-1 honest-IC, Phase-3 pre-registered text null, the
+  three-way-triangulated hawkish-FOMC −1.4%/wk gold, Phase-6 classical-beats-ML). Both pages
+  adopt our **baseline-first / gated-Stage-B / pre-registered-null** discipline verbatim.
+- **This side (this edit):** added a "Companion (general-design treatment)" pointer at the top
+  of `plans/phase_8_ssl_probing.md` establishing that **this plan is the grounded instantiation
+  and governs for metals**; brain2 is the design library, not the runnable spec.
+- **Takeaway:** brain2's own standing open question — "does SSL transfer to near-martingale
+  finance?" — is answered by this program's evidence: largely no. The reconciliation is a
+  shared gate, not a redesign. Phase-8 status is unchanged (scoped, not started); nothing here
+  advances implementation.
 
-Closed two gaps left open by the 2026-07-18 sessions. No code, no research content.
+## 2026-07-18 (later) — Phases 9 & 10 scoped: better-specified causal treatments (docs only)
 
-- **Journal was two sessions behind.** The Stage-A scaffold and the Phase 9/10 promotion had
-  both been committed without entries (the log stopped at the roadmap reconcile, still quoting
-  543 tests against a committed 559). Both entries above were written retroactively from the
-  commits (`f16408d`, `5d4abfc`, `63b4857`) and are labelled as such by their dates.
-- **`plans/brain2/` removed.** It was an untracked staging dir. `phase_9_*` and `phase_10_*`
-  were byte-identical to the promoted copies. `phase_8_ssl_probing.md` was **not** redundant —
-  it was a *newer* revision, differing only at lines 4–17 (the rest byte-identical modulo
-  CRLF): a corrected status line plus a "Companion (general-design treatment)" paragraph
-  reconciling this plan with the external brain2 wiki. That preamble was ported into the
-  tracked `plans/phase_8_ssl_probing.md` (with the status further updated to
-  "Stage A scaffolded", which neither copy said) before the dir was deleted.
-- **Dangling reference flagged, not hidden.** The ported paragraph points at
-  `../../brain2/wiki/...`; that wiki exists nowhere under `/home/mcmur` on this machine. The
-  paths are kept as provenance and annotated inline as non-resolving rather than quietly
-  dropped — if the brain2 repo lives on another machine or is yet to be created, the
-  cross-reference should be re-pointed at its real location.
+> Recovered 2026-07-20 from the OneDrive clone (commit `953a711`). Original text, unedited.
+
+Two new design briefings added, both flowing from one diagnosis: the Phase-5 anchor
+finding's weaknesses were **specification failures, not noise** — the GPR instrument
+measured news intensity not flight-to-safety, the DXY treatment was endogenous, and the
+monetary treatment is simply wrong for supply-driven PGM. The strategic implication is to
+spend data-engineering effort on **clean, well-identified treatments**, not more predictive
+features (Phase-6 showed features lose OOS). No code, data, or DB touched.
+
+- **`plans/phase_9_realyield_event_study.md`** — re-specify the FOMC finding as a
+  **real-yield** event study. Three treatments: (A) GSS/Swanson factor decomposition of the
+  existing `ff1/ff2/ed4` FOMC surprises (no new data — test whether gold loads on the
+  path/real-rate factor vs target); (B) a same-evening Δreal-yield surprise table
+  (`DFII2/DFII10`, mirroring the migration-012 `fomc_yield_surprises` ΔDGS2 template)
+  broadened to CPI/EMPSIT dates from `bls_calendar.csv` — ~450-550 event-days vs the 35 that
+  couldn't be hold-out-validated; (C) an inflation-surprise breakeven-vs-real-yield
+  decomposition at CPI. Reuses lp.py/causal.py/svar.py triangulation. Goal: a real-yield IRF
+  that validates on 2024-26 and sharpens the FOMC/CPI hedge-timing rule.
+- **`plans/phase_10_pgm_supply_shocks.md`** — the right treatment for the metal Phase-5 got
+  wrong (palladium sign-flip): a dated, typed **PGM supply-event ledger** (annotator schema-v2
+  `event{}` date-blind + hand anchors + press verification) feeding an LP/DML event study of
+  `PA=F`/`PL=F`. Honest about power (~10-30 clean events → wide CIs, possible underpowered
+  null). Business lever: PGM intake-cap / offload rule (AMC's fattest tail); ledger also feeds
+  Phase-2 dating and rhodium/cat-scrap pricing.
+
+Both **scoped, not started**, and **wired into `00_roadmap.md`** as Phases 9–10 in this
+session (Phase 8 folded into the roadmap too, for continuity — it had never been wired in).
+
+## 2026-07-20 — Found a diverged second clone; journal reconciled from it (doc hygiene)
+
+Started as "backfill two missing journal entries and delete the redundant `plans/brain2/`
+staging dir." It turned into something more important: **this repo has a diverged sibling
+clone, and work exists there that never reached here.**
+
+- **The clone.** `C:\Users\mcmur\OneDrive\Documents\Claude\Projects\amc`
+  (`/mnt/c/...` from WSL), same `origin`. Its `.canonical_path` correctly says the WSL copy
+  at `/home/mcmur/projects/amc` is the source of truth and OneDrive is backup-only — but it
+  is *not* inert. It carries **two commits that exist nowhere else**, branched off the shared
+  ancestor `a18e254`: `ce62983` (Phase 8 ↔ brain2 wiki reconciliation) and `953a711`
+  (Phases 9–10 scoped + Phases 8–10 wired into the roadmap). Neither is on the laptop and
+  neither is on `origin` (the OneDrive copy's `origin/main` is stale at `a18e254`; the
+  laptop's is at `63b4857`). Its working tree is also dirty across ~20+ files, largely CRLF
+  churn from OneDrive/Windows.
+- **What had already been recovered by hand, and what hadn't.** The *plan files* from those
+  commits had been copied over manually as the untracked `plans/brain2/` dir and promoted on
+  the laptop (`63b4857`), so Phase 9/10 content is intact. What was **lost** was the
+  `journal.md` half of both commits — 53 lines of contemporaneous research narrative. Earlier
+  in this session I wrote retroactive reconstructions of those sessions from commit messages,
+  not knowing originals existed. Those reconstructions have now been **deleted and replaced
+  with the original text**, marked with a recovery blockquote. The originals are substantially
+  richer: the brain2 v4/v2 "Grounding" edits, the four hard facts, the answer to brain2's
+  standing "does SSL transfer to near-martingale finance?" question (largely no), and the
+  Phase 9/10 diagnosis that **Phase-5's weaknesses were specification failures, not noise**.
+  That diagnosis is the strategic rationale for both phases and had no other record here.
+- **The brain2 path is real and now correct.** The cross-reference in
+  `plans/phase_8_ssl_probing.md` was written relative to the *OneDrive* checkout, where
+  `../../brain2/` resolves (both live under `Claude/Projects/`). From the WSL copy it
+  resolved nowhere, which is why it read as dangling. All three targets verified to exist,
+  and the reciprocal "Grounding" sections in `ssl-for-market-structure-probing.md` (v4) and
+  `cross-asset-pretraining.md` (v2) verified present — every claim the plan makes about
+  brain2 checks out. Path rewritten to the absolute location and the incorrect
+  "does not resolve" annotation I added earlier removed.
+- **`plans/brain2/` deleted** (after the above): `phase_9_*`/`phase_10_*` byte-identical to
+  the promoted copies, `phase_8_ssl_probing.md` a newer revision whose preamble was ported in.
+
+**Open item — do not leave this.** The two OneDrive commits are still unmerged and unpushed.
+Their plan content is reproduced on the laptop and their journal text is now recovered here,
+so nothing is at risk of loss, but the histories remain forked and `origin` has neither. The
+clean fix is to decide the OneDrive clone is read-only-backup for good (per `.canonical_path`),
+push the laptop's `main`, and reset the OneDrive copy to it — otherwise the next session run
+over there forks again. Related standing risk in project memory: the laptop is already the
+sole copy of the 139.9M-row corpus and the live collector captures.

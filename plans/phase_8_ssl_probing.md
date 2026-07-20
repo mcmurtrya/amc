@@ -7,18 +7,20 @@ driver, harness wiring, and embedding backfill are not.
 
 **Companion (general-design treatment).** A deliberately modality-agnostic version of
 this design lives in the separate *brain2* research wiki
-(`../../brain2/wiki/synthesis/ssl-for-market-structure-probing.md` and
-`cross-asset-pretraining.md`), developed from the SSL / vision literature without this
+(`C:\Users\mcmur\OneDrive\Documents\Claude\Projects\brain2`, i.e.
+`/mnt/c/Users/mcmur/OneDrive/Documents/Claude/Projects/brain2` from WSL —
+`wiki/synthesis/ssl-for-market-structure-probing.md`, `wiki/synthesis/cross-asset-pretraining.md`,
+`wiki/reference/amc-metals-case-study.md`), developed from the SSL / vision literature without this
 project's data constraints. **This plan is the grounded instantiation and governs for
 the metals problem.** As of 2026-07-18 the two are reconciled: the brain2 pages carry a
-"Grounding" section pointing back here and to
-`../../brain2/wiki/reference/amc-metals-case-study.md` (which captures this project's four
-hard facts, the Phase-6 classical-beats-ML / sentiment-hurts-OOS result, the triangulated
-hawkish-FOMC finding, and the paid-data null), and both sides adopt the same baseline-first
-gate. Where they differ, the daily / market-wide / ~40–50-effective-regime reality here
-wins; brain2 is the design library, not the runnable spec.
-(Note 2026-07-20: the brain2 wiki is not present on this machine — these paths do not
-resolve locally and are recorded as provenance only.)
+"Grounding" section pointing back here and to `amc-metals-case-study.md` (which captures this
+project's four hard facts, the Phase-6 classical-beats-ML / sentiment-hurts-OOS result, the
+triangulated hawkish-FOMC finding, and the paid-data null), and both sides adopt the same
+baseline-first gate. Where they differ, the daily / market-wide / ~40–50-effective-regime
+reality here wins; brain2 is the design library, not the runnable spec.
+(Paths verified 2026-07-20. They were originally written as `../../brain2/…`, which resolves
+only from the OneDrive checkout of this repo — not from the canonical WSL working copy at
+`/home/mcmur/projects/amc`; hence the absolute form above.)
 
 This phase asks a narrow, honest question: *does the joint daily state of the gold
 price complex and the GDELT news stream contain a low-dimensional, fold-stable axis
