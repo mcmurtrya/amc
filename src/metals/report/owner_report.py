@@ -139,9 +139,9 @@ FINDINGS: tuple[Finding, ...] = (
 
 NULLS: tuple[Finding, ...] = (
     Finding(
-        headline="News and sentiment data does not help predict prices — it hurts",
+        headline="Free news-mood tracking does not help predict prices — it hurts",
         plain=(
-            "We collected 139.9 million news articles and built market-mood categories "
+            "We collected 139.9 million news articles and built market-mood measures "
             "from them. They did not improve volatility forecasts. On fresh data they "
             "made forecasts significantly WORSE. We set the pass mark before running "
             "the test, and the test failed it."
@@ -149,19 +149,27 @@ NULLS: tuple[Finding, ...] = (
         numbers=(
             "The pre-set bar was a 1.0% accuracy improvement and wins in 60% of test "
             "periods. Actual: 0.37% WORSE, winning 4 of 11. On the untouched hold-out "
-            "data, news-regime and sentiment features both degraded accuracy by a "
-            "statistically significant margin."
+            "data, both the news-mood and news-category measures degraded accuracy by "
+            "a statistically significant margin."
         ),
         confidence=(
             "High, and unusually clean: the standard was fixed in advance, then "
             "independently reconfirmed on data never used in development."
         ),
         caveat=(
-            "This means news has no value for FORECASTING. It does not mean news is "
-            "worthless — the same categories are useful for explaining why a past move "
-            "was large. Prediction and explanation are different jobs."
+            "Be precise about what was tested. The mood score is a free, general-purpose "
+            "one that counts positive and negative words against a standard dictionary. "
+            "It is not finance-specific, it reads whole articles rather than headlines, "
+            "and it produces one market-wide reading per day rather than a separate one "
+            "per metal. So the finding is that THIS measure does not forecast — not that "
+            "no news measure could. It also does not mean news is worthless: the same "
+            "categories are useful for explaining why a past move was large. Prediction "
+            "and explanation are different jobs."
         ),
-        source="results/phase3_writeup.md, results/phase6_validation.md",
+        source=(
+            "results/phase3_writeup.md, results/phase6_validation.md, "
+            "results/amc_paid_data_review.md"
+        ),
     ),
     Finding(
         headline="The machine-learning model did not beat old-fashioned statistics",
@@ -351,10 +359,12 @@ def build(out_path: Path, now: datetime | None = None) -> Path:
             "metals” and “geopolitical tension lifts gold” both failed. "
             "Knowing which rules of thumb are false is worth as much as the one that is "
             "true, because it stops you acting on them.",
-            "<b>News and sentiment tracking does not predict prices.</b> We tested this "
+            "<b>Free news-mood tracking does not predict prices.</b> We tested this "
             "properly, with the pass mark set in advance, on 139.9 million articles. It "
-            "failed, and on fresh data it actively made forecasts worse. We recommend "
-            "not paying for a sentiment feed.",
+            "failed, and on fresh data it actively made forecasts worse. We also "
+            "recommend against buying a paid news-sentiment subscription — but on "
+            "separate grounds: those products cost five figures a year, and their "
+            "licences bar commercial use by a business like yours.",
             "<b>Simple beats sophisticated.</b> On data the models had never seen, "
             "decades-old statistical methods forecast better than the machine learning. "
             "We are recommending the simpler tool.",

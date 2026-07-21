@@ -2690,3 +2690,45 @@ must be run in the background, not inside a foreground timeout.
 Open question for the user, not resolved here: the briefing addresses the ledger ask to the
 owner personally ("your books"), on the assumption the document is what prompts that
 conversation. If it is meant to circulate more widely, that section wants softening.
+
+## 2026-07-21 — Owner briefing: narrowed the sentiment claim to what was actually tested
+
+Prompted by a direct question — *what labels was the sentiment score based on?* The answer
+is **none**, and chasing it down showed the owner briefing was overclaiming.
+
+- **What the "sentiment" feature actually is.** Not a trained classifier and not a labelled
+  dataset: it is **GDELT's precomputed V2Tone**, parsed out of the GKG field in
+  `data/gdelt.py` (the raw string is `tone,positive,negative,polarity,ARD,SGRD`). GDELT
+  derives it by counting words against **general-purpose sentiment dictionaries** — no human
+  annotation, not Loughran-McDonald, not FinBERT. The `lgbm_sentiment` model that failed the
+  hold-out (`scripts/phase6_holdout.py:141-144`) used `n_articles`, the three
+  `mean_tone_*` daily means, and `topic_*` BERTopic prevalences — and BERTopic is
+  unsupervised, so **both halves of that feature block are label-free**.
+- **Four properties that bound the null:** the lexicon is generic rather than financial;
+  tone scores the whole article body, not the headline; it collapses to one market-wide row
+  per day (no per-metal signal — GDELT has no per-metal theme but `ECON_GOLDPRICE`, which
+  never occurs alone); and the daily aggregate is an unweighted mean over an
+  aggregator-heavy corpus with no source whitelist. FinBERT appears in the Phase 3 plan and
+  in the data assessment as an upgrade path but **never shipped** — the embedding gate closed
+  after the null.
+- **The overclaim, and the fix.** The briefing said "We recommend not paying for a sentiment
+  feed" on the strength of the Phase 6 experiment. But the experiment tested *free generic
+  lexical tone*; a paid finance-tuned, entity-resolved feed is a different product. The
+  recommendation still stands — `results/amc_paid_data_review.md:340-343` argues RavenPack /
+  Bigdata is "a richer version of the exact sentiment class Phase-6 falsified," and those
+  products fail on cost and on non-commercial licensing (the CME personal-use trap) — but it
+  rests on the paid-data review, **not** on the experiment alone. Report now says so:
+  the null is scoped to the free general-purpose measure and spells out its four limitations
+  in the caveat box; the paid-feed recommendation is given separately on cost/licence
+  grounds; `amc_paid_data_review.md` added to that finding's sources.
+- Headline reworded "News and sentiment data…" → "**Free news-mood tracking**…" in both the
+  summary bullet and the section, so the scope is visible without reading the caveat.
+
+**Bearing on Phase 8 / future text work:** the untested question is not "does sentiment
+work" but "does a *finance-specific, per-metal, market-supervised* text signal work." Nothing
+in the corpus has ever been trained against a market-identified target — which is exactly the
+shape of the proposed text→SVAR-risk-aversion-shock distillation (brainstorm idea 3).
+
+Docs/content only: strings in `report/owner_report.py`, PDF regenerated. ruff + mypy clean;
+`tests/test_report_pdf.py` 15 passed. Full suite not re-run — no code path changed, and it
+now takes ~53 min.
