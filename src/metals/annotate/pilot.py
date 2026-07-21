@@ -38,7 +38,14 @@ FULL_ERA_DAYS = 1678  # title-era trading days (2019-09-22 -> 2026-06-19)
 
 # Modelled output tokens per per-title record (compact JSON). The dry run reports
 # this assumption; tune it after the first real batch returns actual usage.
-PER_TITLE_OUTPUT_TOKENS = 55
+#
+# 55 modelled the schema-v2 record. Schema v3.0 adds four CONDITIONAL fields
+# (novelty / event_time_ref / physical_tightness / region) emitted only on
+# event-bearing titles — roughly +35 tokens each time they appear. The blended
+# figure therefore depends on the event share, which is exactly what Stage 0 will
+# measure: at a ~10-15% event share the average lands near 60. Treat this as an
+# assumption to be replaced by measured usage after the first batch, not a fact.
+PER_TITLE_OUTPUT_TOKENS = 60
 DAY_OVERHEAD_OUTPUT_TOKENS = 40
 
 MAX_OUTPUT_TOKENS = 32000

@@ -23,6 +23,11 @@ MIN_ANY_METAL_COVERAGE = 0.40
 MIN_PGM_STRESS_COVERAGE = 0.20
 MAX_DATE_BLIND_DRIFT = 0.10
 MIN_FOMC_RECALL = 0.50  # fraction of FOMC days where a monetary stance fires
+# schema v3.0: the prompt requires `novelty` and `event_time_ref` on EVERY
+# event-bearing title, so a low fill rate means the instruction was ignored — a
+# schema problem, not a sparse-world problem. `physical_tightness` and `region`
+# are genuinely sparse and are reported without a gate.
+MIN_V3_FILL = 0.80
 
 _PGM = {"platinum", "palladium"}
 
@@ -194,9 +199,73 @@ def date_blind_drift(df: pd.DataFrame) -> CheckResult:
     )
 
 
+def _event_titles(df: pd.DataFrame) -> list[dict]:
+    """Every relevant, event-bearing title across the blind rows."""
+    out: list[dict] = []
+    for _, row in _blind(df).iterrows():
+        for t in _titles(row["raw_json"]):
+            if t.get("relevant") and t.get("event_type") not in (None, "none"):
+                out.append(t)
+    return out
+
+
+def v3_field_usage(df: pd.DataFrame) -> list[CheckResult]:
+    """Did the annotator actually populate the schema-v3.0 conditional fields?
+
+    These fields are omitted by design on non-event titles, so the denominator is
+    event-bearing titles only. A field that never fires cost output tokens and
+    bought nothing — that is a schema finding worth having before the full run.
+    """
+    events = _event_titles(df)
+    if not events:
+        return [CheckResult("v3_field_usage", None, "-", None, "no event-bearing titles in sample")]
+    n = len(events)
+    results: list[CheckResult] = []
+    for field in ("novelty", "event_time_ref"):
+        fill = sum(1 for t in events if t.get(field)) / n
+        results.append(
+            CheckResult(
+                f"{field}_fill",
+                float(fill),
+                f">= {MIN_V3_FILL:.0%}",
+                bool(fill >= MIN_V3_FILL),
+                f"{int(fill * n)}/{n} event titles carry `{field}`",
+            )
+        )
+    for field in ("physical_tightness", "region"):
+        informative = sum(1 for t in events if t.get(field) not in (None, "none"))
+        results.append(
+            CheckResult(
+                f"{field}_informative",
+                float(informative / n),
+                "report-only",
+                None,
+                f"{informative}/{n} event titles carry a non-'none' `{field}` "
+                "(sparse by design — no gate)",
+            )
+        )
+    scrap = sum(1 for t in events if t.get("event_type") == "scrap_recycling_flow")
+    results.append(
+        CheckResult(
+            "scrap_recycling_fires",
+            float(scrap / n),
+            "report-only",
+            None,
+            f"{scrap}/{n} event titles typed `scrap_recycling_flow` "
+            "(new in v3.0 — zero means the channel is absent from the corpus)",
+        )
+    )
+    return results
+
+
 def report_card(df: pd.DataFrame) -> str:
     """Assemble the pre-registered pass/fail card."""
-    results = [*coverage(df), known_event_recall(df), date_blind_drift(df)]
+    results = [
+        *coverage(df),
+        known_event_recall(df),
+        date_blind_drift(df),
+        *v3_field_usage(df),
+    ]
     results.append(
         CheckResult(
             "human_audit_accuracy",
@@ -211,12 +280,12 @@ def report_card(df: pd.DataFrame) -> str:
         "Stage-0 pilot report card",
         f"  rows: {len(df)}  successful: {n_ok}  models: {sorted(set(df.get('model', [])))}",
         "",
-        f"  {'check':<24}{'value':>10}  {'gate':<10} verdict",
+        f"  {'check':<32}{'value':>10}  {'gate':<12} verdict",
     ]
     for r in results:
         v = "n/a" if r.value is None else f"{r.value:.3f}"
         verdict = "PENDING" if r.passed is None else ("PASS" if r.passed else "FAIL")
-        lines.append(f"  {r.name:<24}{v:>10}  {r.threshold:<10} {verdict}")
+        lines.append(f"  {r.name:<32}{v:>10}  {r.threshold:<12} {verdict}")
         lines.append(f"      {r.detail}")
     computed = [r for r in results if r.passed is not None]
     if computed and all(r.passed for r in computed):

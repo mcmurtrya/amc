@@ -71,7 +71,11 @@ def test_estimate_run_offline_math():
         opus.output_tokens
         == (3 * pilot.PER_TITLE_OUTPUT_TOKENS + 2 * pilot.DAY_OVERHEAD_OUTPUT_TOKENS) * 2
     )
-    assert opus.batch_usd == round(opus.standard_usd * 0.5, 2)
+    # Batch is half price. Assert the invariant with a cent of slack rather than
+    # `round(standard * 0.5, 2)`: both fields are rounded from the SAME unrounded
+    # cost (pilot.py), so re-rounding an already-rounded standard double-rounds
+    # and disagrees whenever the true cost sits near a half-cent.
+    assert abs(opus.batch_usd - opus.standard_usd / 2) <= 0.01
     # Full-run extrapolation scales up from the 2-day sample.
     full = next(r for r in est.full_run_rows if r.model == "claude-opus-4-8")
     assert full.output_tokens > opus.output_tokens
@@ -229,3 +233,129 @@ def test_coverage_and_drift_and_card():
     card = checks.report_card(df)
     assert "GATE:" in card
     assert "any_metal_coverage" in card
+
+
+# --- schema v3.0 ------------------------------------------------------------
+
+
+def _event_results(**title_overrides) -> pd.DataFrame:
+    """Blind results frame carrying one event-bearing title."""
+    title = {
+        "id": 1,
+        "relevant": True,
+        "metal_reads": [{"metal": "palladium", "direction": -2}],
+        "event_type": "pgm_supply_disruption",
+        "event_entity": "Nornickel",
+        "supply_demand_side": "supply",
+        "framing": "reaction",
+        "monetary_stance": "none",
+    }
+    title.update(title_overrides)
+    raw = json.dumps(
+        {
+            "gold_narrative_regime": "safe_haven",
+            "monetary_stance_day": "none",
+            # A recap title with no event: the v3 keys must be absent here.
+            "titles": [
+                title,
+                {
+                    "id": 2,
+                    "relevant": True,
+                    "metal_reads": [{"metal": "gold", "direction": 0}],
+                    "event_type": "none",
+                    "event_entity": "",
+                    "supply_demand_side": "none",
+                    "framing": "neither",
+                    "monetary_stance": "none",
+                },
+            ],
+        }
+    )
+    return pd.DataFrame(
+        [
+            {
+                "date": "2020-02-20",
+                "variant": "blind",
+                "stratum": "pgm",
+                "model": "claude-opus-4-8",
+                "ok": True,
+                "gold_narrative_regime": "safe_haven",
+                "monetary_stance_day": "none",
+                "raw_json": raw,
+            }
+        ]
+    )
+
+
+def test_v3_fields_are_optional_not_required():
+    """The conditional fields must be omittable, or the token saving is lost."""
+    item = schema.ANNOTATION_SCHEMA["properties"]["titles"]["items"]
+    optional = set(item["properties"]) - set(item["required"])
+    assert optional == {"novelty", "event_time_ref", "physical_tightness", "region"}
+
+
+def test_v3_vocabularies_are_wired_into_the_schema():
+    props = schema.ANNOTATION_SCHEMA["properties"]["titles"]["items"]["properties"]
+    assert props["novelty"]["enum"] == schema.NOVELTY
+    assert props["event_time_ref"]["enum"] == schema.EVENT_TIME_REFS
+    assert props["physical_tightness"]["enum"] == schema.PHYSICAL_TIGHTNESS
+    assert props["region"]["enum"] == schema.REGION_TAGS
+
+
+def test_scrap_recycling_is_an_event_type_and_is_documented():
+    assert "scrap_recycling_flow" in schema.EVENT_TYPES
+    assert "scrap_recycling_flow" in schema.SYSTEM_PROMPT
+
+
+def test_prompt_documents_the_conditional_fields_and_says_to_omit_them():
+    for field in ("novelty", "event_time_ref", "physical_tightness", "region"):
+        assert f"`{field}`" in schema.SYSTEM_PROMPT
+    assert "OMIT THE KEYS ENTIRELY" in schema.SYSTEM_PROMPT
+
+
+def test_task_version_bumped_so_v2_cache_is_invalidated():
+    assert schema.TASK_VERSION == "v3.0"
+
+
+def test_v3_usage_counts_only_event_titles():
+    """The recap title must not dilute the denominator."""
+    df = _event_results(novelty="first_report", event_time_ref="today", region="russia_cis")
+    res = {c.name: c for c in checks.v3_field_usage(df)}
+    assert res["novelty_fill"].value == 1.0  # 1/1 event titles, not 1/2 titles
+    assert res["novelty_fill"].passed is True
+    assert res["event_time_ref_fill"].value == 1.0
+    assert res["region_informative"].value == 1.0
+    assert res["region_informative"].passed is None  # report-only, no gate
+
+
+def test_v3_usage_flags_an_ignored_instruction():
+    """An event title missing the required-by-prompt fields must FAIL."""
+    df = _event_results()
+    res = {c.name: c for c in checks.v3_field_usage(df)}
+    assert res["novelty_fill"].value == 0.0
+    assert res["novelty_fill"].passed is False
+
+
+def test_v3_usage_treats_none_as_uninformative():
+    df = _event_results(physical_tightness="none", region="none")
+    res = {c.name: c for c in checks.v3_field_usage(df)}
+    assert res["physical_tightness_informative"].value == 0.0
+    assert res["region_informative"].value == 0.0
+
+
+def test_v3_usage_reports_scrap_channel_firing():
+    df = _event_results(event_type="scrap_recycling_flow")
+    res = {c.name: c for c in checks.v3_field_usage(df)}
+    assert res["scrap_recycling_fires"].value == 1.0
+
+
+def test_v3_usage_pending_when_no_events():
+    df = _synthetic_results()  # every title is event_type "none"
+    res = checks.v3_field_usage(df)
+    assert len(res) == 1 and res[0].passed is None
+
+
+def test_report_card_includes_v3_checks():
+    card = checks.report_card(_event_results(novelty="first_report", event_time_ref="today"))
+    assert "novelty_fill" in card
+    assert "scrap_recycling_fires" in card

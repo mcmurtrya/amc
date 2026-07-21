@@ -2814,3 +2814,71 @@ reaction at all (`results/phase2_scenarios.md:128` handles it correctly by pushi
 2:00–2:30 PM window and sharpen the anchor on *the same 35 events* — backlog A2.
 
 Docs only; no code, data or DB touched.
+
+## 2026-07-21 (later still) — Annotator schema v2 → v3.0, before the pilot ran
+
+Re-examined the LLM annotator for information worth engineering *during* the one pass.
+The timing was the point: changing the schema bumps `TASK_VERSION`/`prompt_hash`, which
+invalidates the cache and any pre-registration built on it — after the pilot runs, a schema
+change means re-running the pilot too. This was the last free moment.
+
+**The gap that mattered: the schema extracted events but could not date them.** Phase 10 is
+literally "a *dated*, typed PGM supply-event ledger", and dedupe is **within-day only**
+(`titles.py:213` drops duplicates on the normalised title inside one day). A five-day strike
+therefore reads as five events, against an expected ~10–30 clean PGM shocks — miscounting is
+fatal to an already-underpowered design. Two fields fix it:
+
+- `novelty` (`first_report`/`followup`/`recap`/`unclear`). **Honest limitation, documented in
+  the constant:** the annotator sees one day in isolation and cannot *know* novelty — it reads
+  linguistic markers ("renewed", "still", "enters its third week"). Partial signal, but
+  combined with `event_type`+`event_entity` it makes cross-day clustering tractable where it
+  is currently guesswork. Flagged as the field most likely to invite parametric recall →
+  watch in the date-blind A/B.
+- `event_time_ref` (`past`/`today`/`days_ahead`/`weeks_plus_ahead`/`unspecified`) — `framing`
+  had anticipatory-vs-reaction but not *how far*, so a title previewing an FOMC meeting three
+  weeks out would date an event to today.
+
+**The AMC-specific hole:** `EVENT_TYPES` had thirteen values and none covered
+recycling/scrap — consumers cashing in jewellery, pawn/resale, refiner throughput. That is
+AMC's *supply side*, the most business-relevant channel in the taxonomy, and the target for
+the scrap-inflow nowcast. Added `scrap_recycling_flow`; it would have been unrecoverable
+without a second full run.
+
+Also added `physical_tightness` (premiums/delays/mint suspensions — worth having because the
+external premium panel is **licence-blocked**, so headlines may be the only legally usable
+premium signal) and `region` (a normalised enum; `event_entity` is verbatim free text and
+hard to join on). `severity` considered and **held** pending a Phase-10 commitment.
+
+**Design choice — conditional, not required.** All four are OPTIONAL in the JSON schema and
+the prompt says "OMIT THE KEYS ENTIRELY" when `event_type` is `none`. Output tokens dominate
+this job and ~90% of titles are recaps/explainers; making them required would have cost four
+extra keys on every one of ~250 titles × 1,678 days for no information. Verified every
+consumer reads them with `.get()` before doing this.
+
+**Report card extended so the pilot tells us whether the fields actually fire** — a field that
+never populates cost tokens and bought nothing, which is a schema finding worth having before
+the full run. `novelty_fill` / `event_time_ref_fill` gated at ≥80% *of event-bearing titles*
+(the prompt demands them, so a low rate means the instruction was ignored — a schema problem,
+not a sparse-world one); `physical_tightness_informative`, `region_informative` and
+`scrap_recycling_fires` are report-only, being sparse by nature.
+
+**Two things surfaced while doing this:**
+
+1. **An existing test was latently brittle and my change exposed it.**
+   `test_estimate_run_offline_math` asserted `batch_usd == round(standard_usd * 0.5, 2)`, but
+   `pilot.py:162` derives BOTH fields by rounding the same unrounded cost. The test's version
+   double-rounds and disagrees whenever the true cost sits near a half-cent — the longer v3
+   prompt moved it there. Fixed to assert the real invariant with a cent of slack rather than
+   re-deriving from an already-rounded value.
+2. **`PER_TITLE_OUTPUT_TOKENS` would have understated v3 cost.** It is a modelling constant
+   (55, for the v2 record), not something that tracks the schema. Raised to 60 with the
+   reasoning written down: +~35 tokens per event-bearing title, blended over an event share
+   that is *unknown until Stage 0 measures it*. Explicitly marked an assumption to be replaced
+   by measured usage after the first batch.
+
+**Cost, re-estimated (~+9%):** 80-day pilot ×2 variants **$32.66** Opus batch (was ~$30);
+full 1,678-day single-variant run **$342.54** Opus / **$205.52** Sonnet / **$68.51** Haiku.
+
+`plans/phase_8_ssl_probing.md` §8.1 updated with the v3 rationale (it documented v2 and had
+gone stale). ruff + mypy clean (63 files); `tests/test_annotate_pilot.py` 26 passed (was 8 —
++10 v3 tests, +8 pre-existing). Pilot still **not run**.

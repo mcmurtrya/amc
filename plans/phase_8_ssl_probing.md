@@ -673,6 +673,41 @@ field. The full field-by-field menu (Groups 1–3, leakage handling, the JSON sc
 2026-07-17 workflow record; the machine-readable schema lives in
 `src/metals/annotate/schema.py`.
 
+**Schema v3.0 (2026-07-21) — added before the pilot ran, while changes were still free.**
+Four **conditional** per-title fields, emitted only when `event_type != "none"` and omitted
+entirely otherwise (output tokens dominate this job, and ~90% of titles are recaps), plus one
+new `event_type` value:
+
+- `novelty` (`first_report`/`followup`/`recap`/`unclear`) — per-day dedupe is *within-day
+  only* (`titles.py`), so without this a five-day strike reads as five events. Phase 10 is a
+  **dating** exercise expecting only ~10–30 clean PGM shocks, where miscounting is fatal. The
+  annotator sees one day in isolation and can only read linguistic cues, so this is partial
+  signal by construction — and it is the field most likely to invite parametric recall, so
+  watch it in the date-blind A/B.
+- `event_time_ref` (`past`/`today`/`days_ahead`/`weeks_plus_ahead`/`unspecified`) — `framing`
+  separates anticipatory from reaction but not *how far*; a title previewing an FOMC meeting
+  three weeks out must not date an event to today.
+- `physical_tightness` (`tightening`/`easing`/`none`) — premiums, delivery delays, mint
+  suspensions, backwardation. The external premium panel is **licence-blocked**, so headlines
+  may be the only legally usable premium signal until that clears.
+- `region` (normalised enum) — `event_entity` is verbatim free text and hard to join on; gold
+  demand is an India/China story, PGM supply a South Africa/Russia one.
+- `EVENT_TYPES` gains **`scrap_recycling_flow`** — consumers selling jewellery, pawn/resale
+  volume, refiner throughput. AMC's own *supply side*, which the v2 vocabulary had no home
+  for, and the target for the scrap-inflow nowcast (`plans/research_backlog.md` E2).
+
+Deliberately still excluded: numeric magnitude extraction (rarely in the title, noisy),
+per-title confidence, and anything resembling a sentiment score beyond `direction` — that is
+the Phase-6-falsified class and must not re-enter by the back door. `severity` was considered
+and **held** pending a decision to commit to Phase 10.
+
+`TASK_VERSION` → `v3.0` (invalidates the v2 cache and any pre-registration built on it).
+Report card gains `novelty_fill` / `event_time_ref_fill` (gated at ≥80% of event-bearing
+titles — the prompt demands them, so a low rate means the instruction was ignored) and
+report-only `physical_tightness_informative` / `region_informative` /
+`scrap_recycling_fires`. Cost impact ~+9%: 80-day pilot ×2 variants **$32.66** Opus batch;
+full 1,678-day single-variant run **$342.54** Opus / **$205.52** Sonnet / **$68.51** Haiku.
+
 **Firewall:** `monetary_stance` and `gold_narrative_regime` are directional
 sentiment/regime signals — scoped to Phase-5 triangulation / Phase-3 clustering, **never**
 fed to a return forecaster without first clearing the §4 incremental-IC + permutation null
