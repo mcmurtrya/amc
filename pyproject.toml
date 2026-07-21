@@ -51,6 +51,7 @@ dependencies = [
     "pyyaml>=6.0",
     "python-dotenv>=1.0",
     "tqdm>=4.66",
+    "reportlab>=5.0.0",
 ]
 
 [project.optional-dependencies]
@@ -103,6 +104,7 @@ module = [
     "doubleml.*",
     "lightgbm.*",
     "arch.*",
+    "reportlab.*",
 ]
 ignore_missing_imports = true
 

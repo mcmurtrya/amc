@@ -2642,3 +2642,51 @@ clean fix is to decide the OneDrive clone is read-only-backup for good (per `.ca
 push the laptop's `main`, and reset the OneDrive copy to it — otherwise the next session run
 over there forks again. Related standing risk in project memory: the laptop is already the
 sole copy of the 139.9M-row corpus and the live collector captures.
+
+## 2026-07-20 (later) — Client-report tooling + the AMC owner briefing
+
+Built a reusable PDF reporting layer and used it to produce the first plain-language
+briefing for AMC's owner (`results/amc_owner_briefing.pdf`, 10pp). New dependency:
+`reportlab` 5.0.0 — the box had no PDF toolchain at all (no pandoc, LaTeX, or weasyprint),
+and matplotlib's `PdfPages` is the wrong tool for a text-heavy document.
+
+- **`src/metals/report/pdf.py`** — presentation primitives only, domain-free, so a second
+  report is a content module rather than a new engine. `Report` builder (`h1/h2/para/
+  bullets/table/callout/definition_list/title_page`), a `keep_together()` context manager,
+  page furniture. The `keep_together()` exists because `keepWithNext` on a heading style
+  does **not** survive a following `KeepTogether` (a table) — which is precisely the case
+  that strands a heading at the foot of a page; hit it, diagnosed it, added the primitive.
+- **`src/metals/report/facts.py`** — live state read from DuckDB at generation time
+  (spread floors, ledger counts, price coverage, quarantine total, git commit). Every
+  getter degrades to an explicit "unavailable" instead of a plausible default.
+- **`src/metals/report/owner_report.py`** — wording, not analysis. Findings are `Finding`
+  records with a **required** `caveat` and `source`; the renderer puts the caveat in a
+  coloured box under the claim. Numbers are quoted from committed `results/*.md` write-ups
+  or read live — nothing is recomputed here.
+- **`scripts/make_owner_report.py`** — `uv run python scripts/make_owner_report.py`.
+- **15 tests** (`tests/test_report_pdf.py`), including two that encode editorial policy:
+  a jargon grep over the rendered text (`rmse`, `p-value`, `local projection`, `doubleml`,
+  `lightgbm` must not reach the owner) and an assertion that every `Finding` carries a
+  caveat and a source.
+
+**Editorial stance, deliberate.** The nulls get their own section with equal billing
+("What failed, and why that is worth money to you") — the sentiment/news null, classical-
+beats-ML, the weak-dollar rule, and the GPR signal — because a report carrying only the
+hawkish-FOMC finding would misrepresent the state of knowledge. The live spread-floor
+figures (Au 90.0% of spot, Ag 80.7%, Pt 82.0%, Pd 79.9%) render under a red
+"Do not quote these numbers to a customer" block: they rest on the assumed 10-day float
+and placeholder exit, and are shown only so the owner can judge the shape. The engine's
+honesty flags are translated into plain sentences and printed beneath the table; an
+unrecognised flag renders verbatim rather than being dropped, so a missing explanation
+surfaces as ugly text instead of a silently absent caveat. The ledger section renders a red
+"this is the bottleneck" block while the tables are empty and switches to green with real
+counts once data lands.
+
+**Quality:** ruff + mypy clean (63 files; `reportlab.*` added to the mypy
+ignore-missing-imports list, matching how every other untyped dep is handled). Full suite
+**574 passed** (was 559) in 53 minutes — worth noting the suite is now long enough that it
+must be run in the background, not inside a foreground timeout.
+
+Open question for the user, not resolved here: the briefing addresses the ledger ask to the
+owner personally ("your books"), on the assumption the document is what prompts that
+conversation. If it is meant to circulate more widely, that section wants softening.
