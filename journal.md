@@ -2768,3 +2768,49 @@ Answering it turned up a mechanism error of mine and a wording bug in the shippe
 
 Content strings only; PDF regenerated. ruff + mypy clean, `tests/test_report_pdf.py` 15
 passed. Full suite not re-run (no code path changed).
+
+## 2026-07-21 (later) — Research backlog captured: `plans/research_backlog.md`
+
+Three brainstorming passes this session (ML-synthesising-new-data, business/operations,
+ML round two) produced ~24 candidate research paths. Logged them as a standing document
+rather than leaving them in conversation. **Nothing in it has been run** — the file says so
+at the top, since the entries describe hypotheses about where value might be, not findings.
+
+- **Placement:** `plans/`, beside `00_roadmap.md`. The roadmap records what is *committed*;
+  the backlog records what is *considered*. Items graduate into a phase plan or get killed
+  with the reason recorded in place. Roadmap now carries a pointer section, and its stale
+  test count was corrected 559 → 574.
+- **Structure:** eight themes (anchor-finding usability; spread floor & tail risk;
+  operations & inventory; unmodelled risk channels; demand side & pricing; text/information
+  creation; small-N methods; licence-blocked), each entry giving the question, why AMC
+  cares, method sketch, blocker and honest prior. Status vocabulary is explicit —
+  Ready / Ledger / Purchase / Licence / Prereq.
+- **A standing rule is written into the file:** items B1 (conformal floor), G1 (pooled panel
+  vol) and G3 (decision-loss retraining) all re-open conclusions Phase 6 reached, on
+  legitimately different tasks — distributional vs point, pooled vs per-metal, business loss
+  vs RMSE. Defensible, and also exactly what motivated reasoning looks like from outside, so
+  **each must have its pass mark written down before it runs**. The programme's most
+  credible asset is that its nulls were pre-registered; the file says not to spend it.
+
+**Two findings surfaced while brainstorming that are worth more than the ideas themselves:**
+
+1. **The surprise tables overlap far more usefully than assumed.** `fomc_surprises`
+   (Bauer-Swanson `mps_orth`) covers 1988-02 → **2023-12-13**, 354 events; `fomc_yield_surprises`
+   (ΔDGS2) covers 2007-01 → **2026-04-29**, 172 events. They **overlap on 136 events** and the
+   ΔDGS2 series carries **20 events past where Bauer-Swanson stops**. That is a bridge across
+   the project's single most-cited gap (the untested 2024-26 cutting cycle) — backlog A1,
+   and it overlaps Phase 9 treatment (B).
+2. **The LLM-annotator pilot is built and has never been run.** `src/metals/annotate/`
+   (schema/titles/sample/pilot/checks) + `scripts/annotate_pilot.py` + 8 tests, complete
+   since 2026-07-17, with a pre-registered report card — and no results file exists. ~$30 on
+   Opus for the 80-day pilot. Per `amc_paid_data_review.md`, no purchase at any price yields
+   per-metal news signal and this *method* is the only lever that does. Highest
+   readiness-to-value item in the backlog by a distance.
+
+Also recorded: the FOMC measurement handicap is structural, not an oversight — COMEX settles
+~1:30 PM ET and the statement lands at 2:00 PM, so daily data cannot see the announcement
+reaction at all (`results/phase2_scenarios.md:128` handles it correctly by pushing it into
+`r_{t+1}`). Intraday via Databento (~$1/mo + one-time backfill) would isolate the
+2:00–2:30 PM window and sharpen the anchor on *the same 35 events* — backlog A2.
+
+Docs only; no code, data or DB touched.
