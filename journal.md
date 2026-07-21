@@ -2957,3 +2957,9 @@ so they are not re-raised): markup-escaping of DB strings (mechanically true, im
 flags are code-controlled), three prompt-contradiction claims (misread the ABSOLUTE RULES /
 conditional-block interaction), and a multi-event-per-title gap (real but pre-existing v2
 scope, not a v3 regression — candidate for a future pass, not a defect in this one).
+
+**Full-suite result (landed after the commit above):** **597 passed**, 0 failures, 19m11s —
+the review fixes are green across the whole repo, not just the targeted suites. Roadmap
+status line finalized from "run in progress" to 597 all-pass. (The 53-minute figure from
+2026-07-20 reflected contention with the concurrent review agents; ~19 min is the
+uncontended runtime.)
