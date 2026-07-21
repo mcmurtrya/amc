@@ -708,6 +708,21 @@ report-only `physical_tightness_informative` / `region_informative` /
 `scrap_recycling_fires`. Cost impact ~+9%: 80-day pilot ×2 variants **$32.66** Opus batch;
 full 1,678-day single-variant run **$342.54** Opus / **$205.52** Sonnet / **$68.51** Haiku.
 
+**Schema v3.1 (2026-07-21, adversarial review pass — still before any run.)** Prompt
+clarifications: the `event_time_ref` boundary is now exclusive ("up to and including one
+week" / "more than one week"), titles naming a calendar date or month ("ahead of the June
+FOMC") must use `unspecified` — computing the distance requires today's date, exactly the
+knowledge the date-blind design withholds — and `region` gets a precedence rule for
+actor-vs-affected titles (use where the supply/demand effect lands, not the sanctioning
+actor). Report card gains three review-driven checks: **`results_current` (gated)** — the
+card refuses to trust parquet whose `task_version`/`prompt_hash` stamps don't match the
+current instrument (previously the stamps were written but never read back, so a schema
+bump silently passed stale results); **`novelty_ab_drift` / `event_time_ref_ab_drift`
+(report-only)** — per-title date-blind A/B drift on the dating fields, closing the gap where
+the day-level drift gate never watched `novelty`, the field most at risk of parametric
+recall; **`v3_spurious_emission` (report-only)** — share of non-event titles emitting a
+conditional key, the number that says whether the 60-tokens/title cost model holds.
+
 **Firewall:** `monetary_stance` and `gold_narrative_regime` are directional
 sentiment/regime signals — scoped to Phase-5 triangulation / Phase-3 clustering, **never**
 fed to a return forecaster without first clearing the §4 incremental-IC + permutation null
@@ -723,7 +738,8 @@ and PGM-specific; (2) human-audit accuracy (manual gold set); (3) known-event re
 `fomc_surprises`; (4) **date-blind A/B drift** (date-visible vs date-stripped — the
 parametric-leakage control, trap 11); (5) reproducibility across seeds. A red gate
 (PGM coverage ~0, or material date-blind drift, or the wrong-date counterfactual anchoring
-on parametric memory) stops the program for ~$5–20 instead of the full-run spend. Cost
+on parametric memory) stops the program for at most the pilot spend (~$33 Opus batch under
+schema v3.x; a mid-pilot abort costs less) instead of the full-run spend. Cost
 estimate and model comparison: `scripts/annotate_pilot.py estimate` (dry-run token
 measurement; see the Phase-8 cost note).
 
@@ -747,8 +763,10 @@ price-relevant slice for a US dealer. Now `_select_capped` reserves ≥50% of th
 US window (13–22 UTC) when it has enough titles, hands unused slack to whichever side has more,
 and evenly strides each side's picks across time. The cap still discards ~2.8× of titles/day on
 average (mean ~696, growing to ~1,400/day by 2026); *removing* it instead would raise the
-full-run batch cost to ~$860 Opus / $520 Sonnet / $175 Haiku (vs ~$314/$188/$63 capped) — a
-separate cost/coverage call, but the clock-bias is now fixed regardless.
+full-run batch cost roughly 2.7× over the capped figure (v2-era estimate: ~$860 Opus /
+$520 Sonnet / $175 Haiku uncapped vs ~$314/$188/$63 capped; both sides scale ~+9% under
+schema v3.x — the capped v3 figures are in the v3.0 addendum above) — a separate
+cost/coverage call, but the clock-bias is now fixed regardless.
 
 **Standing limitations (documented, not bugs):** (1) the keyword gate is **English-centric** —
 ~64% of gold-relevant news is non-English (Arabic 24%, Chinese 14%, …), and only gold has a

@@ -77,9 +77,11 @@ FINDINGS: tuple[Finding, ...] = (
         ),
         numbers=(
             "Five trading days after a hawkish surprise: gold −1.5%, silver −3.0%, "
-            "platinum −1.7%, palladium −1.6% (palladium not statistically reliable). "
-            "Over twenty days the moves roughly double: gold −1.8%, silver −3.7%, "
-            "platinum −3.0%."
+            "platinum −1.7%, palladium −1.8% (palladium not statistically reliable). "
+            "A second, independent estimation method lands within about a tenth of a "
+            "percentage point of each of these. Over twenty days the declines deepen — "
+            "sharply for platinum, more modestly for gold and silver: gold −1.8%, "
+            "silver −3.7%, platinum −3.0%."
         ),
         confidence=(
             "Highest. Three independent methods agree, including one that never "
@@ -104,9 +106,11 @@ FINDINGS: tuple[Finding, ...] = (
             "threatened, and only mildly when that reason is reaffirmed."
         ),
         numbers=(
-            "Hawkish surprise: gold −1.4% over five days. Dovish (friendly) surprise: "
-            "gold +0.6%, and not statistically distinguishable from zero. No dovish "
-            "result for any metal reached significance."
+            "Hawkish surprise: gold down about 1.4–1.5% over five days (the two "
+            "estimation methods bracket it). Dovish (friendly) surprise: gold +0.6%, "
+            "and not statistically distinguishable from zero. No dovish response held "
+            "up for any metal — the one cell that looked significant (palladium, under "
+            "a single method) is what chance produces across a dozen tests."
         ),
         confidence="High. Both main methods agree on the asymmetry.",
         caveat=(
@@ -142,16 +146,17 @@ NULLS: tuple[Finding, ...] = (
         headline="Free news-mood tracking does not help predict prices — it hurts",
         plain=(
             "We collected 139.9 million news articles and built market-mood measures "
-            "from them. They did not improve volatility forecasts. On fresh data they "
-            "made forecasts significantly WORSE. We set the pass mark before running "
-            "the test, and the test failed it."
+            "from them. They gave no meaningful improvement to volatility forecasts, "
+            "and on fresh data they made forecasts significantly WORSE. We set the "
+            "pass mark before running the test, and the test failed it."
         ),
         numbers=(
             "The pre-set bar was a 1.0% accuracy improvement and wins in 60% of test "
-            "periods. Actual: 0.37% WORSE, winning 4 of 11. Two separate approaches were "
-            "then re-tested on the untouched hold-out data, and both degraded accuracy "
-            "by a statistically significant margin: the news-mood measure, and a "
-            "market-regime measure that sorts each day into a “type of market” using "
+            "periods. Actual: an improvement of only 0.37%, winning just 4 of 11 — a "
+            "clear fail against the bar we set ourselves. Two separate approaches were "
+            "then re-tested on the untouched hold-out data, and there both degraded "
+            "accuracy by a statistically significant margin: the news-mood measure, and "
+            "a market-regime measure that sorts each day into a “type of market” using "
             "price behaviour, economic conditions and news together."
         ),
         confidence=(
@@ -364,9 +369,10 @@ def build(out_path: Path, now: datetime | None = None) -> Path:
             "<b>Free news-mood tracking does not predict prices.</b> We tested this "
             "properly, with the pass mark set in advance, on 139.9 million articles. It "
             "failed, and on fresh data it actively made forecasts worse. We also "
-            "recommend against buying a paid news-sentiment subscription — but on "
-            "separate grounds: those products cost five figures a year, and their "
-            "licences bar commercial use by a business like yours.",
+            "recommend against paying for a news-sentiment subscription: the affordable "
+            "services are thinner variants of exactly the measure that failed, and the "
+            "richer products are either enterprise-priced (five figures a year) or "
+            "licensed for academic, non-commercial use a business cannot rely on.",
             "<b>Simple beats sophisticated.</b> On data the models had never seen, "
             "decades-old statistical methods forecast better than the machine learning. "
             "We are recommending the simpler tool.",
@@ -437,7 +443,23 @@ def build(out_path: Path, now: datetime | None = None) -> Path:
             kind="blocked",
         )
     else:
-        as_of = pd.Timestamp(floors.iloc[0]["date_utc"]).strftime("%d %B %Y")
+        # latest_spread_floors() selects each metal's OWN newest row, so the four
+        # dates can diverge after a partial engine run. Never assert a single
+        # computation date the data does not support.
+        d_min = pd.Timestamp(floors["date_utc"].min())
+        d_max = pd.Timestamp(floors["date_utc"].max())
+        if d_min == d_max:
+            as_of_note = (
+                f"Computed {d_max.strftime('%d %B %Y')}, the last date with complete "
+                "price data. Placeholder values — see the caution above."
+            )
+        else:
+            as_of_note = (
+                f"Computed between {d_min.strftime('%d %B %Y')} and "
+                f"{d_max.strftime('%d %B %Y')} — the metals' latest engine rows do not "
+                "share a date, so treat cross-metal comparisons with care. Placeholder "
+                "values — see the caution above."
+            )
         rep.callout(
             "Do not quote these numbers to a customer",
             "The figures below are placeholders, not prices. Every one of them rests "
@@ -458,10 +480,7 @@ def build(out_path: Path, now: datetime | None = None) -> Path:
             ],
             rows=_floor_rows(floors),
             align_right=[1, 2, 3, 4],
-            notes=(
-                f"Computed {as_of}, the last date with complete price data. "
-                "Placeholder values — see the caution above."
-            ),
+            notes=as_of_note,
         )
         rep.h2("What each number currently rests on")
         rep.bullets(_flag_explanations(floors))

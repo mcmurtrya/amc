@@ -313,8 +313,8 @@ def test_prompt_documents_the_conditional_fields_and_says_to_omit_them():
     assert "OMIT THE KEYS ENTIRELY" in schema.SYSTEM_PROMPT
 
 
-def test_task_version_bumped_so_v2_cache_is_invalidated():
-    assert schema.TASK_VERSION == "v3.0"
+def test_task_version_bumped_so_stale_caches_are_invalidated():
+    assert schema.TASK_VERSION == "v3.1"
 
 
 def test_v3_usage_counts_only_event_titles():
@@ -359,3 +359,119 @@ def test_report_card_includes_v3_checks():
     card = checks.report_card(_event_results(novelty="first_report", event_time_ref="today"))
     assert "novelty_fill" in card
     assert "scrap_recycling_fires" in card
+
+
+# --- review fixes (2026-07-21): currency gate, per-title A/B drift, emission --
+
+
+def test_prompt_carries_named_date_and_region_precedence_rules():
+    assert "you cannot compute the distance without today's date" in schema.SYSTEM_PROMPT
+    assert "not the actor imposing it" in schema.SYSTEM_PROMPT
+    # The one-week boundary must be exclusive, not overlapping. (Match on
+    # single-line fragments — the prompt hard-wraps at ~80 columns.)
+    assert "including one week out" in schema.SYSTEM_PROMPT
+    assert "more than one week out" in schema.SYSTEM_PROMPT
+
+
+def _stamped(df: pd.DataFrame, task_version=None, model="claude-opus-4-8") -> pd.DataFrame:
+    tv = task_version or schema.TASK_VERSION
+    df = df.copy()
+    df["task_version"] = tv
+    df["prompt_hash"] = schema.prompt_hash(model)
+    df["model"] = model
+    return df
+
+
+def test_results_currency_passes_on_current_stamps():
+    res = checks.results_currency(_stamped(_event_results()))
+    assert res.passed is True and res.value == 1.0
+
+
+def test_results_currency_fails_on_stale_task_version():
+    res = checks.results_currency(_stamped(_event_results(), task_version="v2.0"))
+    assert res.passed is False
+    assert "v2.0" in res.detail
+
+
+def test_results_currency_fails_on_prompt_hash_drift():
+    df = _stamped(_event_results())
+    df["prompt_hash"] = "0123456789abcdef"  # same version, edited prompt
+    res = checks.results_currency(df)
+    assert res.passed is False
+
+
+def test_results_currency_pending_without_provenance_columns():
+    res = checks.results_currency(_event_results())
+    assert res.passed is None
+
+
+def _ab_results(blind_novelty: str, dated_novelty: str) -> pd.DataFrame:
+    def rec(novelty):
+        return json.dumps(
+            {
+                "gold_narrative_regime": "safe_haven",
+                "monetary_stance_day": "none",
+                "titles": [
+                    {
+                        "id": 1,
+                        "relevant": True,
+                        "metal_reads": [{"metal": "palladium", "direction": -2}],
+                        "event_type": "pgm_supply_disruption",
+                        "event_entity": "Nornickel",
+                        "supply_demand_side": "supply",
+                        "framing": "reaction",
+                        "monetary_stance": "none",
+                        "novelty": novelty,
+                        "event_time_ref": "today",
+                    }
+                ],
+            }
+        )
+
+    rows = []
+    for variant, novelty in (("blind", blind_novelty), ("dated", dated_novelty)):
+        rows.append(
+            {
+                "date": "2020-02-20",
+                "variant": variant,
+                "stratum": "pgm",
+                "model": "claude-opus-4-8",
+                "ok": True,
+                "gold_narrative_regime": "safe_haven",
+                "monetary_stance_day": "none",
+                "raw_json": rec(novelty),
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def test_v3_ab_drift_detects_novelty_disagreement():
+    res = {c.name: c for c in checks.v3_date_blind_drift(_ab_results("first_report", "followup"))}
+    assert res["novelty_ab_drift"].value == 1.0
+    assert res["event_time_ref_ab_drift"].value == 0.0  # "today" in both
+
+
+def test_v3_ab_drift_pending_without_both_variants():
+    res = checks.v3_date_blind_drift(_event_results())  # blind-only fixture
+    assert len(res) == 1 and res[0].passed is None
+
+
+def test_v3_spurious_emission_counts_non_event_titles_only():
+    # _event_results has 1 event title (omitted keys don't matter) and 1
+    # non-event title with NO v3 keys -> 0/1 spurious.
+    res = checks.v3_spurious_emission(_event_results())
+    assert res.value == 0.0
+    # Now a frame whose non-event title wrongly carries a v3 key.
+    raw = json.loads(_event_results().iloc[0]["raw_json"])
+    raw["titles"][1]["novelty"] = "unclear"  # spurious on the event_type=none title
+    df = _event_results()
+    df.loc[0, "raw_json"] = json.dumps(raw)
+    res = checks.v3_spurious_emission(df)
+    assert res.value == 1.0
+    assert res.passed is None  # report-only
+
+
+def test_report_card_includes_currency_and_emission_checks():
+    card = checks.report_card(_stamped(_event_results(novelty="first_report")))
+    assert "results_current" in card
+    assert "v3_spurious_emission" in card

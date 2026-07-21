@@ -21,7 +21,7 @@ hypotheses about where value might be, not findings.
 
 ## Standing rule for anything that re-opens a null
 
-Items B1, G1 and G2 re-test conclusions Phase 6 already reached, on legitimately
+Items B1, G1 and G3 re-test conclusions Phase 6 already reached, on legitimately
 different tasks (distributional vs point, pooled vs per-metal, decision loss vs RMSE).
 That is defensible research, and it is also exactly what motivated reasoning looks like
 from outside. **Each must have its pass mark written down before it runs**, the way the
@@ -164,8 +164,10 @@ useful for staffing and cash planning.
 **F1. Run the LLM-annotator pilot — Ready. Highest readiness-to-value in the backlog.**
 `src/metals/annotate/` is **built, tested and never run** (no results file exists): frozen
 date-blind prompt, stratified 80-day sampler, Batch-API runner, and a **pre-registered
-pass/fail report card**, driven by `scripts/annotate_pilot.py`. Cost ~$30 (Opus, 80-day
-pilot); full 1,678-day run ~$63–314 depending on tier.
+pass/fail report card**, driven by `scripts/annotate_pilot.py`. Cost $32.66 (Opus batch,
+80-day pilot ×2 variants); full 1,678-day run $68.51–$342.54 depending on tier
+(schema-v3 re-estimate, 2026-07-21 — supersedes the ~$30/$63–314 v2 figures this entry
+originally quoted).
 *Why it matters beyond its price:* `results/amc_paid_data_review.md` concluded that **no
 purchase at any price** yields per-metal news signal, and that the only lever which adds
 per-metal information is a *method* — this one. It is also the input to Phase 10's PGM

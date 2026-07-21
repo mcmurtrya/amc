@@ -4,10 +4,12 @@ Every number a report prints about *current* state comes from here rather than
 being typed into prose, so a stale figure is impossible by construction: if the
 spread-floor engine is re-run, the next report moves with it.
 
-Each getter degrades to an explicit "unavailable" rather than a plausible
-default. A report that cannot find a number must say so — silently substituting
-a stand-in is exactly the failure this project's flag discipline exists to
-prevent.
+Failure semantics matter here. A *missing table* (migration not applied)
+degrades to the getter's explicit default — that is a real project state worth
+reporting. Anything else — a locked database, an IO failure, a binder error
+from schema drift — RAISES, so report generation fails loudly instead of
+producing a document full of plausible zeros. Silently substituting a stand-in
+is exactly the failure this project's flag discipline exists to prevent.
 """
 
 from __future__ import annotations
@@ -17,6 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+import duckdb
 import pandas as pd
 
 from metals.data.db import connection
@@ -39,7 +42,12 @@ def _scalar(sql: str, default: Any = None) -> Any:
     try:
         with connection(read_only=True) as conn:
             row = conn.execute(sql).fetchone()
-    except Exception:
+    except duckdb.CatalogException:
+        # Missing table (migration not applied) — the one case where a default
+        # is legitimate. Anything else — a locked DB, an IO failure, a binder
+        # error from schema drift — MUST propagate: a briefing built on
+        # silently-defaulted facts asserts falsehoods ("we hold zero rows of
+        # your transaction data") with exit code 0.
         return default
     if row is None or row[0] is None:
         return default
@@ -50,7 +58,8 @@ def _frame(sql: str) -> pd.DataFrame:
     try:
         with connection(read_only=True) as conn:
             return conn.execute(sql).fetchdf()
-    except Exception:
+    except duckdb.CatalogException:
+        # Missing table only; see _scalar for why nothing broader is caught.
         return pd.DataFrame()
 
 

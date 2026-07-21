@@ -172,3 +172,55 @@ def test_every_finding_carries_a_caveat() -> None:
     for f in FINDINGS + NULLS:
         assert f.caveat.strip(), f"{f.headline} has no caveat"
         assert f.source.strip(), f"{f.headline} has no source"
+
+
+# --- review fixes (2026-07-21) -----------------------------------------------
+
+
+def test_scalar_and_frame_propagate_binder_errors():
+    """Schema drift (a renamed column) must fail loudly, never read as empty.
+
+    A silently-defaulted fact becomes a false statement in a client-facing
+    PDF ("we hold zero rows of your transaction data"), so only a MISSING
+    TABLE may degrade to the default.
+    """
+    import duckdb
+
+    with pytest.raises(duckdb.BinderException):
+        facts._scalar("SELECT no_such_column FROM prices", -1)
+    with pytest.raises(duckdb.BinderException):
+        facts._frame("SELECT no_such_column FROM prices")
+
+
+def test_live_db_getters_return_nondefault_values():
+    """On a box with the research DB, every getter must bind and return real data.
+
+    This is the regression net for the all-getters-failed report: with the old
+    blanket `except Exception` a locked/missing DB produced zeros and every
+    type-only assertion still passed.
+    """
+    try:
+        n = facts._scalar("SELECT count(*) FROM prices", None)
+    except Exception:
+        pytest.skip("live DB unavailable")
+    if not n:
+        pytest.skip("prices table empty on this box")
+    first, last, count = facts.price_coverage()
+    assert count == n and first != "n/a" and last != "n/a"
+    assert facts.headline_count() >= 0  # binds (raises on drift), value may vary
+    floors = facts.latest_spread_floors()
+    if not floors.empty:
+        assert {"metal", "date_utc", "max_buy_frac", "flags"} <= set(floors.columns)
+
+
+def test_default_out_is_repo_anchored_not_cwd():
+    import importlib.util
+
+    repo = Path(__file__).resolve().parents[1]
+    spec = importlib.util.spec_from_file_location(
+        "make_owner_report", repo / "scripts" / "make_owner_report.py"
+    )
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    assert mod.DEFAULT_OUT.is_absolute()
+    assert mod.DEFAULT_OUT == repo / "results" / "amc_owner_briefing.pdf"

@@ -23,7 +23,10 @@ MODEL_DEFAULT = "claude-opus-4-8"
 
 # Bump when the prompt or schema changes in a way that should invalidate the
 # on-disk annotation cache and any pre-registration built on it.
-TASK_VERSION = "v3.0"
+# v3.1 (2026-07-21): prompt clarifications only, before any run — exclusive
+# event_time_ref boundary at one week + named-date rule (date-blindness guard),
+# and a region precedence rule for actor-vs-affected titles.
+TASK_VERSION = "v3.1"
 
 # Controlled event-type vocabulary (subsumes the five overlapping lens candidates
 # — cb_gold_flow / trade_policy / retail_bullion_stress / macro-prints — as enum
@@ -223,16 +226,21 @@ CONDITIONAL PER-TITLE FIELDS — include these four ONLY when `event_type` is no
   expected to know whether the event was reported yesterday, and you must not
   guess from outside knowledge.
 - `event_time_ref`: when the occurrence happens relative to this report —
-  "past" (already occurred, before today), "today", "days_ahead" (within about a
-  week), "weeks_plus_ahead" (a week or more out, e.g. a scheduled meeting),
-  "unspecified".
+  "past" (already occurred, before today), "today", "days_ahead" (up to and
+  including one week out), "weeks_plus_ahead" (more than one week out, e.g. a
+  scheduled meeting), "unspecified". If the title names a calendar date or month
+  rather than a relative distance ("ahead of the June FOMC"), use "unspecified" —
+  you cannot compute the distance without today's date, and you must not guess it.
 - `physical_tightness`: only when the title speaks to the PHYSICAL market —
   premiums, delivery/lead times, mint or refinery suspensions, shortages,
   backwardation, lease rates. "tightening" (premiums up, delays, sold out),
   "easing" (premiums down, supply restored), "none" if the title says nothing
   about physical availability.
-- `region`: the normalised region of the event, from the named actor or country.
-  "none" if the title names no location.
+- `region`: the normalised region of the event. When a title names both an
+  acting country and an affected one ("US sanctions Russian palladium exports"),
+  use the region where the supply or demand effect lands (the sanctioned
+  producer, the importing consumer) — not the actor imposing it. "none" if the
+  title names no location.
 
 DAY-LEVEL FIELDS
 - `gold_narrative_regime`: the dominant frame in which GOLD is being discussed

@@ -16,6 +16,7 @@ from dataclasses import dataclass
 
 import pandas as pd
 
+from metals.annotate import schema as sch
 from metals.data.db import connection
 
 # Pre-registered Stage-0 gate.
@@ -222,14 +223,17 @@ def v3_field_usage(df: pd.DataFrame) -> list[CheckResult]:
     n = len(events)
     results: list[CheckResult] = []
     for field in ("novelty", "event_time_ref"):
-        fill = sum(1 for t in events if t.get(field)) / n
+        # Keep the integer count: reconstructing it as int(fill * n) truncates
+        # under float error (1/49*49 == 0.999...), printing a wrong numerator.
+        filled = sum(1 for t in events if t.get(field))
+        fill = filled / n
         results.append(
             CheckResult(
                 f"{field}_fill",
                 float(fill),
                 f">= {MIN_V3_FILL:.0%}",
                 bool(fill >= MIN_V3_FILL),
-                f"{int(fill * n)}/{n} event titles carry `{field}`",
+                f"{filled}/{n} event titles carry `{field}`",
             )
         )
     for field in ("physical_tightness", "region"):
@@ -258,13 +262,150 @@ def v3_field_usage(df: pd.DataFrame) -> list[CheckResult]:
     return results
 
 
+def results_currency(df: pd.DataFrame) -> CheckResult:
+    """Are these results from the CURRENT instrument? (Gated.)
+
+    ``run_pilot`` stamps every row with ``task_version``/``prompt_hash``, but
+    until this check nothing ever read them back: the cache path is not keyed by
+    the hash, so a schema bump could silently pass stale parquet through the
+    card. A version/hash mismatch is a RED gate — re-run before trusting
+    anything below it.
+    """
+    if "task_version" not in df.columns or "prompt_hash" not in df.columns:
+        return CheckResult(
+            "results_current",
+            None,
+            "-",
+            None,
+            "frame predates provenance stamping — cannot confirm instrument version",
+        )
+    expected_hash = {m: sch.prompt_hash(m) for m in set(df.get("model", []))}
+    current = df.apply(
+        lambda r: (
+            r["task_version"] == sch.TASK_VERSION
+            and r["prompt_hash"] == expected_hash.get(r.get("model"))
+        ),
+        axis=1,
+    )
+    if not len(df):
+        return CheckResult("results_current", None, "-", None, "empty results frame")
+    share = float(current.mean())
+    stale = sorted(set(df.loc[~current, "task_version"].dropna()) - {sch.TASK_VERSION})
+    detail = (
+        f"all rows from the current instrument ({sch.TASK_VERSION})"
+        if share == 1.0
+        else (
+            f"{int((~current).sum())}/{len(df)} rows from a stale instrument "
+            f"(versions {stale or ['prompt-hash drift']}; current {sch.TASK_VERSION}) "
+            "— re-run the batch before trusting this card"
+        )
+    )
+    return CheckResult("results_current", share, "== 100%", bool(share == 1.0), detail)
+
+
+def v3_date_blind_drift(df: pd.DataFrame) -> list[CheckResult]:
+    """Per-title A/B drift on the v3.0 dating fields (report-only).
+
+    The day-level :func:`date_blind_drift` gate never reads a per-title field,
+    yet ``novelty`` is the field the schema flags as most likely to invite
+    parametric recall. Both variants annotate the same numbered list, so titles
+    join across variants by ``(date, id)``; drift is measured on titles that are
+    relevant and event-bearing in BOTH variants.
+    """
+    ok = df[df["ok"]] if "ok" in df.columns else df.iloc[0:0]
+    by: dict[tuple, dict[str, dict]] = {}
+    for _, row in ok.iterrows():
+        for t in _titles(row["raw_json"]):
+            by.setdefault((row["date"], t.get("id")), {})[row["variant"]] = t
+    pairs = [
+        v
+        for v in by.values()
+        if "blind" in v
+        and "dated" in v
+        and all(x.get("relevant") and x.get("event_type") not in (None, "none") for x in v.values())
+    ]
+    if not pairs:
+        return [
+            CheckResult(
+                "v3_ab_drift",
+                None,
+                "-",
+                None,
+                "date-blind A/B not run, or no title is event-bearing in both variants",
+            )
+        ]
+    out: list[CheckResult] = []
+    for field in ("novelty", "event_time_ref"):
+        both = [
+            (p["blind"].get(field), p["dated"].get(field))
+            for p in pairs
+            if p["blind"].get(field) is not None and p["dated"].get(field) is not None
+        ]
+        if not both:
+            out.append(
+                CheckResult(
+                    f"{field}_ab_drift",
+                    None,
+                    "report-only",
+                    None,
+                    f"no joined event title carries `{field}` in both variants",
+                )
+            )
+            continue
+        dis = sum(1 for a, b in both if a != b)
+        out.append(
+            CheckResult(
+                f"{field}_ab_drift",
+                float(dis / len(both)),
+                "report-only",
+                None,
+                f"{dis}/{len(both)} joined event titles change `{field}` when the date "
+                "is revealed (high drift = the field leans on calendar knowledge)",
+            )
+        )
+    return out
+
+
+def v3_spurious_emission(df: pd.DataFrame) -> CheckResult:
+    """Share of NON-event titles emitting any conditional v3 key (report-only).
+
+    The prompt stakes the token budget on "OMIT THE KEYS ENTIRELY", and the fill
+    gates cannot see over-emission because their denominator is event-bearing
+    titles. This is the number that says whether the 60-tokens/title cost model
+    (``pilot.PER_TITLE_OUTPUT_TOKENS``) will hold on the full run.
+    """
+    keys = ("novelty", "event_time_ref", "physical_tightness", "region")
+    non_event = emitting = 0
+    for _, row in _blind(df).iterrows():
+        for t in _titles(row["raw_json"]):
+            if t.get("relevant") and t.get("event_type") not in (None, "none"):
+                continue
+            non_event += 1
+            emitting += int(any(k in t for k in keys))
+    if not non_event:
+        return CheckResult(
+            "v3_spurious_emission", None, "report-only", None, "no non-event titles in sample"
+        )
+    return CheckResult(
+        "v3_spurious_emission",
+        float(emitting / non_event),
+        "report-only",
+        None,
+        f"{emitting}/{non_event} non-event titles emit a conditional v3 key despite the "
+        "OMIT rule (over-emission inflates output cost above the 60-tokens/title model)",
+    )
+
+
 def report_card(df: pd.DataFrame) -> str:
     """Assemble the pre-registered pass/fail card."""
     results = [
+        results_currency(df),
         *coverage(df),
         known_event_recall(df),
         date_blind_drift(df),
         *v3_field_usage(df),
+        *v3_date_blind_drift(df),
+        v3_spurious_emission(df),
     ]
     results.append(
         CheckResult(

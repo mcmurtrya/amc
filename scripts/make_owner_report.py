@@ -15,7 +15,10 @@ from pathlib import Path
 
 from metals.report import owner_report
 
-DEFAULT_OUT = Path("results/amc_owner_briefing.pdf")
+# Anchored to the repo root (not the cwd) so running the script from anywhere
+# updates the canonical committed PDF instead of silently creating a new
+# results/ directory wherever the shell happens to be.
+DEFAULT_OUT = Path(__file__).resolve().parents[1] / "results" / "amc_owner_briefing.pdf"
 
 
 def main() -> None:

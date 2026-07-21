@@ -2882,3 +2882,78 @@ full 1,678-day single-variant run **$342.54** Opus / **$205.52** Sonnet / **$68.
 `plans/phase_8_ssl_probing.md` §8.1 updated with the v3 rationale (it documented v2 and had
 gone stale). ruff + mypy clean (63 files); `tests/test_annotate_pilot.py` 26 passed (was 8 —
 +10 v3 tests, +8 pre-existing). Pilot still **not run**.
+
+## 2026-07-21 (evening) — Adversarial review of the recent work; 20 confirmed findings fixed
+
+Ran a five-lens multi-agent review over the last five commits (report layer `3526c5b` →
+annotator v3.0 `4e7292d`): report-layer code, annotator code, briefing factual accuracy
+against the source write-ups, annotation-instrument quality, and docs consistency — every
+finding then handed to an adversarial verifier instructed to refute it. 30 agents; 25 raw
+findings → **20 confirmed, 5 refuted**. All 20 fixed this session.
+
+**The two highs:**
+
+1. **`facts.py` could render a false briefing.** The blanket `except Exception: return
+   default` in `_scalar`/`_frame` made a *locked* DB indistinguishable from an *empty* one —
+   verified live by the reviewer: with another process holding a write connection, the
+   briefing built cleanly (exit 0) while asserting "we hold zero rows of your transaction
+   data" and "the spread-floor engine has not been run", both false. Binder errors from
+   schema drift were likewise swallowed as empties. **Fix:** only `duckdb.CatalogException`
+   (missing table = migration not applied, a real reportable state) degrades to the default;
+   IO/lock/binder errors now propagate so generation fails loudly. Docstring rewritten to
+   state the failure semantics; tests added that a binder error raises, plus a live-DB test
+   asserting the getters return non-defaults on this box (the regression net the old
+   type-only assertions could never provide).
+2. **The briefing inverted the sign of the flagship pre-registered result.** It said the
+   news-lift test came out "0.37% WORSE"; the committed readout (`phase3_writeup.md`) is a
+   **0.37% improvement** that failed the ≥1.0% bar (4/11 splits). Reworded to "an improvement
+   of only 0.37% … a clear fail against the bar we set ourselves." The hold-out degradation
+   claim (DM t +3.43/+2.90) was and remains correct.
+
+**Other briefing corrections (all regenerated into the PDF):** "moves roughly double" at 20d
+overstated gold/silver (~1.2×; only platinum ~1.7×) — now "deepen — sharply for platinum,
+more modestly for gold and silver"; the h=5 headline set silently mixed LP and DML numbers —
+now the LP set (Pd −1.8%) with a note that the second method lands within ~a tenth of a
+point, and the asymmetry finding quotes "1.4–1.5% (the two methods bracket it)"; "no dovish
+result reached significance" hid the one nominally significant cell — now named and
+attributed to multiplicity per the source; the paid-sentiment bullet wrongly claimed all
+products are five-figure AND commercially barred — now: affordable services are thinner
+variants of the falsified measure, richer ones are enterprise-priced or academic/
+non-commercial. Also: the floor table's "Computed {date}" note now handles per-metal date
+divergence (the query is per-metal `max(date_utc)`; a partial engine run would have mixed
+vintages under one asserted date), and `make_owner_report.py`'s default output path is
+anchored to the repo root instead of the cwd.
+
+**Annotator (schema v3.0 → v3.1, still before any run):** the review caught that the
+date-blind A/B gate never watched `novelty` — the exact field the v3.0 notes flagged as most
+leakage-prone. Report card now has per-title `novelty_ab_drift`/`event_time_ref_ab_drift`
+(join across variants by `(date, id)`; report-only), `v3_spurious_emission` (share of
+non-event titles emitting a conditional key — the number that says whether the
+60-tokens/title cost model holds), and a **gated `results_current`** check: `run_pilot`
+stamps `task_version`/`prompt_hash` into the parquet but nothing ever read them back, so a
+schema bump would have silently passed stale results through the card; a mismatch is now a
+RED gate. Prompt clarifications (→ v3.1): exclusive one-week boundary on `event_time_ref`;
+titles naming a calendar date/month must use `unspecified` (computing a distance needs
+today's date — the exact knowledge date-blindness withholds); `region` precedence = where
+the supply/demand effect lands, not the sanctioning actor. Plus the `int(fill*n)` numerator
+truncation fix in the fill checks.
+
+**Docs:** backlog standing rule named G2 where it meant G3 (G2, hierarchical pooling, does
+not re-open a Phase-6 null) — fixed; backlog F1 and the roadmap pointer still quoted the
+superseded v2 costs (~$30/$63–314) — updated to the v3 figures ($32.66 / $68.51–$342.54);
+`phase_8_ssl_probing.md` §8.1's older paragraphs still quoted v2 capped costs and a "~$5–20"
+stop-loss — reconciled and labelled, and a v3.1 addendum paragraph added; roadmap cumulative
+test line updated (597 collected, 2026-07-21).
+
+**Correction to the 2026-07-21 (later still) entry above** (append-only log, so corrected
+here): it said the annotate test file went "26 passed (was 8 — +10 v3 tests, +8
+pre-existing)". Wrong on both counts: the file had **15** tests at every committed state
+before `4e7292d` (the 8 was stale from the 2026-07-17 entry) and the commit added **11**.
+
+**Quality:** ruff + mypy clean (63 files); `test_annotate_pilot.py` 35 + `test_report_pdf.py`
+18 = 53 targeted tests green; 597 collected repo-wide; full suite launched in background
+(53-minute runtime — result to be recorded when it lands). Refuted findings (for the record,
+so they are not re-raised): markup-escaping of DB strings (mechanically true, immaterial —
+flags are code-controlled), three prompt-contradiction claims (misread the ABSOLUTE RULES /
+conditional-block interaction), and a multi-event-per-title gap (real but pre-existing v2
+scope, not a v3 regression — candidate for a future pass, not a defect in this one).
