@@ -2732,3 +2732,39 @@ shape of the proposed text→SVAR-risk-aversion-shock distillation (brainstorm i
 Docs/content only: strings in `report/owner_report.py`, PDF regenerated. ruff + mypy clean;
 `tests/test_report_pdf.py` 15 passed. Full suite not re-run — no code path changed, and it
 now takes ~53 min.
+
+## 2026-07-21 (later) — "News-category" corrected to market-regime; topics path corrected
+
+Follow-on from the sentiment scoping, prompted by *what were the news-category measures?*
+Answering it turned up a mechanism error of mine and a wording bug in the shipped briefing.
+
+- **Mechanism correction: `topic_*` is NOT BERTopic.** `features/topics.py` carries a
+  BERTopic wrapper, but the shipped default is the **themes-via-SQL** path — a streaming
+  DuckDB `GROUP BY` over the `themes` column, because BERTopic over the 63M-row corpus is
+  intractable. `prevalence(theme, day) = articles tagged / articles that day`, multi-label,
+  `topic_id == index` into the fixed 14-entry `TOPIC_THEMES` (mirrors
+  `configs/gdelt_themes.yaml`). Labels are **GDELT's own rule-based GKG theme tagger**, so
+  the "no supervised labels anywhere" conclusion stands — the mechanism was just misstated.
+- **The 14 categories are far thinner than the count suggests.** Measured over
+  `daily_topic_prevalence` (52,524 rows, 2015-02-18 → 2026-06-19):
+  `WB_1699_METAL_ORE_MINING` averages **59.9%** prevalence (it is effectively the corpus
+  filter, so it barely varies); `WB_1164_COMMODITY_PRICES_SHOCKS` appears on **9 days total**;
+  `WB_1125_INTEREST_RATE_POLICY` averages 0.13%. `ECON_GOLDPRICE` (1.3%) remains the only
+  per-metal theme in GDELT's vocabulary. One dominant, two dead — worth remembering before
+  anyone proposes reusing this block.
+- **Wording bug in the briefing, now fixed.** Yesterday's edit called the two failed
+  hold-out models "the news-mood and news-category measures". `lgbm_regime` is **not**
+  news-derived: `features/regimes.py` clusters the joint daily context vector — price
+  behaviour, macro state *and* news together — so the label told the owner something false
+  about what failed. Reworded to "a **market-regime** measure that sorts each day into a
+  'type of market' using price behaviour, economic conditions and news together", and the
+  caveat's explanation-vs-prediction line now attributes the descriptive value to the
+  market-regime grouping (which is what carries the Phase-5 CATE effect-modification result)
+  rather than to "the same categories".
+- For the record on the regime *names* (`fed-rate-hike-expectations`,
+  `diffuse-macro-noise-baseline`, `unclear`): they live in `cluster_centroids.label` with
+  `label_source='llm:low'` — an LLM naming centroids **after** clustering, for human
+  interpretation. The model consumes cluster ids, never the strings.
+
+Content strings only; PDF regenerated. ruff + mypy clean, `tests/test_report_pdf.py` 15
+passed. Full suite not re-run (no code path changed).

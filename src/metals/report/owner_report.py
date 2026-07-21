@@ -148,9 +148,11 @@ NULLS: tuple[Finding, ...] = (
         ),
         numbers=(
             "The pre-set bar was a 1.0% accuracy improvement and wins in 60% of test "
-            "periods. Actual: 0.37% WORSE, winning 4 of 11. On the untouched hold-out "
-            "data, both the news-mood and news-category measures degraded accuracy by "
-            "a statistically significant margin."
+            "periods. Actual: 0.37% WORSE, winning 4 of 11. Two separate approaches were "
+            "then re-tested on the untouched hold-out data, and both degraded accuracy "
+            "by a statistically significant margin: the news-mood measure, and a "
+            "market-regime measure that sorts each day into a “type of market” using "
+            "price behaviour, economic conditions and news together."
         ),
         confidence=(
             "High, and unusually clean: the standard was fixed in advance, then "
@@ -162,9 +164,9 @@ NULLS: tuple[Finding, ...] = (
             "It is not finance-specific, it reads whole articles rather than headlines, "
             "and it produces one market-wide reading per day rather than a separate one "
             "per metal. So the finding is that THIS measure does not forecast — not that "
-            "no news measure could. It also does not mean news is worthless: the same "
-            "categories are useful for explaining why a past move was large. Prediction "
-            "and explanation are different jobs."
+            "no news measure could. Nor is any of it worthless: the market-regime "
+            "grouping fails at forecasting, yet is genuinely useful for explaining why a "
+            "past move was unusually large. Prediction and explanation are different jobs."
         ),
         source=(
             "results/phase3_writeup.md, results/phase6_validation.md, "
