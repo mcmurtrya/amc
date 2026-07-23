@@ -3204,3 +3204,77 @@ languages; nothing has run.
 
 **Full-suite result (landed after the freeze commit): 627 passed**, 0 failures, 5m43s —
 the v3.2 gate changes are green across the whole repo. Roadmap count updated 597 → 627.
+
+## 2026-07-23 — PRE-REGISTRATION: LLM-annotator Stage-0 pilot (§8.1 / §4.4 discipline)
+
+Written BEFORE any annotation label exists (no pilot batch has ever run). This entry is
+**immutable**: any later change to thresholds or decision rules requires a new dated entry
+that supersedes this one with reasons, and results are reported against THIS entry
+regardless. No `raw_json` is read by human or agent before the report card is generated
+and recorded.
+
+**1. Instrument (frozen).**
+- Schema `TASK_VERSION v3.2`; `prompt_hash 18532e4b5fc7125a` (model `claude-opus-4-8`);
+  code state = git `2043ee0`; date-blind primary variant + date-visible A/B control;
+  the nine-language bridge and base-gate-stratified 250-title cap as frozen 2026-07-23.
+- Any prompt/schema/gate-code change after submission voids the run for gating purposes.
+
+**2. Sample (pinned).**
+- `metals.annotate.sample.draw_sample(seed=42)`: **80 days** = 20 event (FOMC/CPI ground
+  truth) + 15 pgm (known PGM-stress windows) + 45 random; span 2019-10-28 → 2026-04-08;
+  content fingerprint `sample_sha256 62a6e984 1382436a` (dates:strata, deterministic).
+
+**3. Cost ceiling.** Opus batch, both variants: estimate **$32.63**; hard abort if
+projected spend exceeds **$50** (2 discrepancy re-submissions max).
+
+**4. Gated thresholds (pass/fail, computed by `checks.report_card` exactly as coded at
+`2043ee0`).**
+| gate | threshold |
+|---|---|
+| `results_current` | == 100% (stamps match v3.2 + prompt_hash) |
+| `any_metal_coverage` | ≥ 0.40 of blind days carry a per-metal read |
+| `pgm_stress_coverage` | ≥ 0.20 of pgm-stratum days carry a Pt/Pd read |
+| `fomc_recall` | ≥ 0.50 of event days fire a monetary stance |
+| `date_blind_drift` (day labels) | ≤ 0.10 |
+| `novelty_fill`, `event_time_ref_fill` | ≥ 0.80 of event-bearing titles |
+| `human_audit_accuracy` | ≥ 0.80 vs a ~30-day hand-labelled gold set |
+
+**5. Report-only diagnostics — prior expectations stated now.**
+`offtopic[eng]` expected ≈ 0.40 (the measured anchor); bridge languages expected 0.11–0.34
+(1 − measured precision); `v3_spurious_emission` expected < 0.10 (OMIT-rule compliance —
+also validates the 60-tok/title cost model); `novelty_ab_drift`/`event_time_ref_ab_drift`
+genuinely uncertain (the fields most at risk of parametric recall); `scrap_recycling_fires`
+expected rare (0–2% of event titles; zero over 80 days = channel absent or vocabulary
+miss, informational either way).
+
+**6. Decision rules (pre-specified branches).**
+- **GREEN** (all computed gates pass) → human audit; audit ≥ 0.80 → Stage-1 decision
+  (full-run tier choice + the LLM-pre-gate decision, per 2026-07-23 entries).
+- `results_current` FAIL → mechanical (stale cache): re-run; not a research outcome.
+- `any_metal_coverage` FAIL → **RED, stop**: the corpus/filter premise is broken.
+- `pgm_stress_coverage` FAIL → PGM scope-down: proceed for gold/market labels; Phase 10's
+  annotator route is re-planned, not silently continued.
+- `fomc_recall` FAIL → day-level `monetary_stance_day` excluded from deliverables;
+  per-title labels proceed if their own gates pass.
+- `date_blind_drift` FAIL → the leakage control failed: **RED for day-level labels**. Then
+  consult the per-title A/B: if disagreement concentrates in `novelty` (> 0.25) while
+  other fields are stable, `novelty` is demoted to non-dating use (Phase 10 first-report
+  logic must not use it) and the run may proceed on the remaining fields only if day-level
+  drift ≤ 0.10 — otherwise **RED, stop**.
+- fill gates FAIL → instruction non-compliance, a schema defect: fix prompt, NEW
+  pre-registration, re-pilot. Not evidence about the corpus.
+- `human_audit_accuracy` FAIL → **RED**: the instrument does not meet the bar; any revision
+  requires a new pre-registration.
+- **Reproducibility addendum** (runs only if computed gates are green): re-submit the same
+  blind requests for the first 10 sample days (~$4); require day-label agreement ≥ 0.80
+  and per-title `relevant` agreement ≥ 0.90. Below → labels too stochastic for event
+  dating; usable in aggregate only, recorded as a scope limit.
+
+**7. Human-audit protocol.** ~30 of the 80 days, stratified like the sample; the auditor
+labels titles **without seeing model outputs**; agreement computed by `check --audit`.
+
+**8. Scope honesty — what this pilot does NOT test.** No predictive claim is made or
+implied; the Phase 3/6 forecasting nulls are not re-opened. Stage 0 tests only whether the
+annotation instrument is feasible, date-blind, and accurate enough to build the Phase 10
+event ledger and Phase 5/9 triangulation inputs. The honest modal outcome for downstream
+*lift* remains null, per the standing Phase-8 pre-registration posture.
