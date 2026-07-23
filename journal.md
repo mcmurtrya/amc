@@ -3201,3 +3201,6 @@ languages; nothing has run.
 
 **Next and final step before the pilot: pre-register the Stage-0 gate in this journal
 (§4.4) — thresholds, prompt_hash, sample seed — then run the ~$33 batch.**
+
+**Full-suite result (landed after the freeze commit): 627 passed**, 0 failures, 5m43s —
+the v3.2 gate changes are green across the whole repo. Roadmap count updated 597 → 627.
