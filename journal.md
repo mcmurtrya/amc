@@ -3278,3 +3278,65 @@ implied; the Phase 3/6 forecasting nulls are not re-opened. Stage 0 tests only w
 annotation instrument is feasible, date-blind, and accurate enough to build the Phase 10
 event ledger and Phase 5/9 triangulation inputs. The honest modal outcome for downstream
 *lift* remains null, per the standing Phase-8 pre-registration posture.
+
+## 2026-07-23 — Pre-spend review of the pilot package; SUPERSEDING PRE-REGISTRATION
+
+Ran a five-lens adversarial review (run path, gate math, admission machinery,
+date-blindness, prereg consistency; 32 agents, every finding adversarially verified)
+before submitting the pilot batch. **27 findings → 14 confirmed.** Three would have voided
+the run had they been discovered after the spend:
+
+1. **The annotator input was nondeterministic.** `ORDER BY timestamp_utc` alone — GDELT
+   publishes in 15-minute batches with 500+ row tie groups, and DuckDB's parallel sort is
+   unstable on ties. Verified live: two consecutive loads of 2026-04-08 shared only
+   **121/250 titles**. Every downstream pin (reproducibility addendum, human audit,
+   offtopic join — whose n_titles guard always passed at the 250 cap) was comparing
+   different inputs. Fixed: `ORDER BY timestamp_utc, headline_id`; verified byte-identical
+   across repeated loads on the worst tie days; result rows now persist
+   titles/headline_ids/langs/title_sha256.
+2. **The blind arm was not date-blind.** 76/80 sampled days carry the literal calendar
+   date in title TEXT ("Gold Rate (Bullion Price) - March 30, 2020"; "Giá vàng hôm nay
+   28/10/2019"). Withholding the date as metadata while handing it over as content measures
+   nothing — the A/B had no contrast. Fixed: `_mask_dates()` in titles.py replaces full
+   dates → `[DATE]` and standalone years → `[YEAR]` in BOTH variants (comma-grouped
+   "1,950" and currency-prefixed "$1950" prices protected; CJK 年/月/日 forms handled;
+   residual day/month-only forms accepted and measured by the new report-only
+   `date_in_title_share` — smoke: 5–14% of kept titles masked). `TASK_VERSION → v3.3`.
+3. **Pre-registered gates were not all computable, and GREEN could print on PENDING.**
+   `check --audit` did not exist; nothing compared two runs; an all-error batch would have
+   shown GREEN. Fixed: `audit_accuracy` + `check --audit`, `audit-template` (titles-only
+   export — the auditor never sees model outputs), `repro` subcommand (day-label ≥0.80 /
+   per-title relevant ≥0.90, pairs with differing `title_sha256` excluded rather than
+   compared), and a named `GATED_AUTO` set — GREEN only when every auto gate is computed
+   AND passed.
+
+Also fixed: crash-safe run path (batch_id + per-day provenance sidecar written BEFORE
+polling; `--batch-id` resume; retry-wrapped poll; overwrite guard), usage/stop_reason
+persisted per row, `_allocate` zero-total guard, `precision.draw_sample` `any_value`→`min`.
+Rejected findings (13) are in the workflow record; notable correct-but-immaterial ones
+(cache_control below the 4096-token Opus floor; stop_reason unchecked but safe via the
+JSON-decode path) were either folded in free or documented.
+
+### SUPERSEDING PRE-REGISTRATION (replaces the 2026-07-23 entry above, per its own
+### amendment policy; all unlisted terms carry over unchanged)
+
+- **Instrument:** `TASK_VERSION v3.3`; `prompt_hash 66beed5f44312fe0`
+  (model `claude-opus-4-8`); code state = git `ec57579`. Reason for supersession:
+  the three run-voiding defects above — each fix is pre-spend and instrument-improving;
+  no threshold changes.
+- **Sample:** unchanged — seed 42, 80 days (20/15/45), `sample_sha256 62a6e9841382436a`
+  (recomputed post-fix, identical).
+- **Corrected decision branch (was self-contradictory):** on `date_blind_drift` FAIL
+  (day-level > 0.10): day-level labels are **RED unconditionally**. Per-title fields
+  proceed iff `novelty_ab_drift` > 0.25 **AND** `event_time_ref_ab_drift` ≤ 0.10 (the
+  leak concentrates in novelty) — then `novelty` is demoted from all dating use and the
+  remaining per-title fields stand. If `event_time_ref_ab_drift` > 0.10 as well, the leak
+  is pervasive: **RED, stop**. All quantities computable from the card as coded.
+- **Newly computable gates, thresholds unchanged:** `human_audit_accuracy` via
+  `check --audit` (join (date,id), ≥0.80); reproducibility via `run --limit 10 --out
+  <repro path>` + `repro` (day ≥0.80, per-title relevant ≥0.90, sha-mismatched pairs
+  excluded). New report-only diagnostic: `date_in_title_share` (expected ~0.05–0.15 per
+  smoke).
+- **Verdict semantics pinned:** GREEN requires every `GATED_AUTO` check computed and
+  passed; any gated check uncomputable → INCOMPLETE (never GREEN); any failure → RED.
+- Cost ceiling, audit protocol, scope-honesty clause, and all other branches: unchanged.

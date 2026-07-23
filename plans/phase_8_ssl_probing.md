@@ -803,7 +803,7 @@ judged-irrelevant share, position-joined via `DayTitles.langs`, drift-guarded). 
 2023-06-01: 1,255 admitted/day, 250 kept (eng 66, zho 54, tur 34, ara 34, vie 22, ind 19…).
 Cost per day unchanged (cap binds). Eleven dropped languages re-enter only via the LLM
 pre-gate decision at the pilot→full-run boundary. Remaining before the pilot:
-**pre-register the Stage-0 gate in journal.md per §4.4** — DONE 2026-07-23 (journal: 'PRE-REGISTRATION: LLM-annotator Stage-0 pilot'; prompt_hash 18532e4b5fc7125a, sample seed 42 / sha 62a6e9841382436a, gates + branch decisions pinned) — then run. (2) The `page_title` slug boundary at 2019-09-22 is an **upstream GDELT feature** (0%
+**pre-register the Stage-0 gate in journal.md per §4.4** — DONE 2026-07-23 and SUPERSEDED same day after the pre-spend review (journal: 'Pre-spend review of the pilot package; SUPERSEDING PRE-REGISTRATION'; TASK_VERSION v3.3, prompt_hash 66beed5f44312fe0, code ec57579, sample sha unchanged 62a6e9841382436a — determinism + real date-masking + computable audit/repro gates) — then run. (2) The `page_title` slug boundary at 2019-09-22 is an **upstream GDELT feature** (0%
 before, 99.47% after — GDELT never emitted the GKG `<PAGE_TITLE>` tag earlier), so the
 annotator is titleless before then, unfixably. (3) **Corpus INGESTION gaps** within the era —
 mapped by `scripts/coverage_audit.py`: **48 missing days in 4 windows**. One (2017-08-29) is the
