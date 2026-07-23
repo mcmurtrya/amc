@@ -177,7 +177,9 @@ terms for 20 languages would add ~520 unique titles/day to the current gate's ~5
 zho/spa/vie/rus dominate — as a composition trade under the binding 250/day cap (needs a
 language-stratified cap reserve, or a cap raise that scales cost ~60%). Precision pass +
 "any language" prompt line required before adoption; see `plans/phase_8_ssl_probing.md`
-§8.1 standing limitation (1).
+§8.1 standing limitation (1). *Precision measured 2026-07-23:* six languages KEEP with no
+stop-listing (zho/vie/ara/tur/tha/kor, all ≥ the English gate's own 0.58 anchor,
+~+177 relevant titles/day); jpn DROP; remainder stop-list-and-retest — table in journal.
 
 **F2. Text → market-identified crisis instrument — Ready.**
 GPR was diagnosed as measuring news *intensity*, not flight-to-safety, while the SVAR

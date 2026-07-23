@@ -3035,3 +3035,57 @@ mirroring the pilot's Batch machinery, then submitted the paid batch.
   `lang_gate_count.py` really does import the shared terms. ruff + mypy clean (65 files).
 - **Submitted:** sample drawn (deterministic seed), batch submitted on `claude-opus-4-8`,
   poll running. Results parquet + report to be recorded here when it lands.
+
+## 2026-07-23 (later still) — Precision mini-batch results: 6 languages pass outright; the
+
+**anchor recalibrates everything.** Batch complete: 2,100/2,100 titles judged (Opus 4.8,
+~$0.75, `judge v1.0`). Results parquet: `data/processed/lang_precision_results.parquet`.
+
+| lang | precision | verdict | dominant false-positive pattern |
+|---|---|---|---|
+| kor | 0.89 | KEEP | (clean) |
+| zho | 0.78 | KEEP | misc idiom |
+| tha | 0.76 | KEEP | (clean) |
+| vie | 0.74 | KEEP | idiom ×15 — the vàng=yellow fear was overblown |
+| ara | 0.73 | KEEP | idiom (الذهب الأسود = "black gold" = oil) |
+| tur | 0.66 | KEEP | idiom/entertainment |
+| **eng** | **0.58** | **ANCHOR** | crypto brands (Bitcoin Gold), Silver Lake, Gold Cup, loyalty tiers |
+| ind | 0.58 | retest | idiom ×19 (medali emas sports) |
+| fra | 0.51 | retest | idiom ×22 (l'or noir/blanc/vert) |
+| hin | 0.51 | retest | idiom ×21 (सोना = sleep, idioms) |
+| pol | 0.52 | retest | idiom ×25 + medals |
+| ben | 0.46 | retest | person/brand ×17 |
+| deu | 0.43 | retest | person/brand ×22 (Gold/Silber as surnames) + Goldmedaille |
+| rus | 0.41 | retest | sports medals + Золотой глобус entertainment |
+| por | 0.35 | retest | place ×23 (Ouro Preto…) |
+| ron | 0.22 | retest (case fix) | **person/brand ×53 — AUR, the Romanian political party** (uppercase acronym; the 'i' regex flag erases the case distinction that would kill it) |
+| ell | 0.21 | drop-candidate | party names + medals; small opportunity (+18/day) |
+| ukr | 0.21 | retest | sports medals ×24 |
+| ita | 0.19 | retest | **sports/award ×40 — medaglia/premio/guida d'oro suffix pattern** |
+| spa | 0.13 | retest | **place ×49 — La Plata / Mar del Plata / Río de la Plata** + medalla de oro |
+| jpn | 0.02 | **DROP** | fashion ×70 — ゴールド is brands/fashion/LEED-Gold/Goldman(ゴールドマン); only 金価格/金相場 are usable |
+
+**The two findings that outrank the table:**
+
+1. **The current English gate itself measures 0.58 under the production-grade judge.** Its
+   FPs: Bitcoin Gold, CORO gold-payment app, Qantas Gold status, Silver Lake (the LA
+   neighbourhood), Gold Cup football, gold dresses. So ~42% of today's English cap slots
+   carry titles the annotator's `relevant` flag will discard — the Stage-0
+   `corpus_offtopic_fraction` should be EXPECTED near 0.4, not the ~3–5% the stop-phrase
+   collocation measurement suggested (different instruments: collocation counting vs
+   semantic relevance). And the fair inclusion bar for new languages is **≥ the anchor**,
+   not an absolute: six languages beat the gate we already run.
+2. **Judge-strictness caveat, recorded:** it judged "Nornickel to Spin Off Bystrinsky
+   Copper Mine" irrelevant — producer-name admissions are DELIBERATE (Phase 10 supply
+   events), so measured "precision" slightly understates gate usefulness for our actual
+   purpose. Symmetric across languages, so relative reads stand.
+
+**Impact-weighted (new/day × precision): the six KEEPs deliver ~+177 relevant titles/day**
+(zho ~93, vie ~54, tur ~18, ara ~10, tha ~1.3, kor ~1) with zero stop-listing. Vietnam's
+domestic gold market — 1.0 title/day under the current gate — is real and clean at 0.74.
+The retest tier's patterns are concentrated and nameable (one dominant cause each), so
+stop-lists are viable; a retest re-runs this mini-batch on the stop-listed pool for
+pennies. spa is the biggest post-fix upside (90 admitted/day, mostly La Plata noise).
+
+Decision NOT taken here: which tier-2 languages to fix vs drop, and the v3.2 freeze —
+that's the user's call with this table in hand.
