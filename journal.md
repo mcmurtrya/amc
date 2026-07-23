@@ -3160,3 +3160,44 @@ reserve + "any language" prompt line, TASK_VERSION bump), pre-register the Stage
 the journal per §4.4, then run. The drop list and reasons stay in this entry so nobody
 re-litigates spa/ita without new evidence (the fix there is NER or a smarter gate, not
 more stop words).
+
+## 2026-07-23 (late) — Schema v3.2 FROZEN: the language bridge is production
+
+Executed the freeze on the measured basis (user-approved). The instrument now reads nine
+languages; nothing has run.
+
+- **`multilang.BRIDGE_LANGS`** — frozen nine: zho, vie, ara, tur, tha, kor, ind, ron, jpn
+  (all ≥ the 0.58 eng anchor; six from round one, three from the terms-v2 retest). The
+  eleven dropped languages' terms/stops stay in the module as the measurement record; they
+  re-enter only via the LLM pre-gate decision at the pilot→full-run boundary.
+- **`titles.py` production gate** — `_admit()` returns (keep, via_bridge): base gate
+  unchanged (English keywords/producers/coins on EVERY row + gold-theme lifeline − stop
+  collocations), bridge adds native-term admission for `BRIDGE_LANGS` with per-language
+  stops. SQL now pulls `src_lang`; `DayTitles` gains an aligned `langs` list.
+- **Cap reserve — one design clarification surfaced by the live smoke.** The ≥50% floor
+  protects the **base gate**, not English: the pre-v3.2 gate was already ~half non-English
+  through the theme lifeline (ara ~84/day), and those admissions keep their slots. Bridge
+  languages share the other ≤50% proportionally (largest-remainder, deterministic) under a
+  40% per-language ceiling so zho (~119/day) cannot evict the tail; slack flows both ways;
+  base selection keeps the US-session reserve, bridge picks are even time-stride (their news
+  cycles are not US-centred). Smoke on 2023-06-01: 41,856 titled rows → 1,255 admitted →
+  250 kept as eng 66, zho 54, tur 34, ara 34, vie 22, ind 19, tha 5, + base-gate
+  theme-admits in hin/mar/deu/fra/ell/ron/urd. Vietnamese giá-vàng titles reach the
+  annotator feed for the first time.
+- **Prompt + version** — new ABSOLUTE RULE: titles may be in any language, judged in their
+  own language, `event_entity` verbatim in original script. `TASK_VERSION → v3.2`
+  (invalidates nothing — no run exists).
+- **Stage-0 card** — report-only `offtopic[lang]` rows: per-language judged-irrelevant
+  share, joined per-title by position via `DayTitles.langs`, guarded against code/DB drift
+  (skips with a warning when the reloaded day's title count no longer matches the stored
+  `n_titles`) and inert on non-`run_pilot` frames. Expectation set by the anchor: eng ≈ 0.4.
+- **Cost:** unchanged — the cap binds (candidates rise, slots don't). The composition is
+  the change, exactly as designed.
+- **Quality:** 65 annotate/precision tests green (+12 for the freeze: bridge set identity,
+  admission paths incl. the AUR non-admit and the spa stays-dropped guard, allocator
+  proportionality/ceiling/determinism/slack, base floor, slack handoff, any-language prompt
+  rule, offtopic-split guards); ruff + mypy clean (65 files); 627 collected; full suite
+  running in background at entry time.
+
+**Next and final step before the pilot: pre-register the Stage-0 gate in this journal
+(§4.4) — thresholds, prompt_hash, sample seed — then run the ~$33 batch.**

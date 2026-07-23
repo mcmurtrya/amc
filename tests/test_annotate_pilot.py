@@ -314,7 +314,7 @@ def test_prompt_documents_the_conditional_fields_and_says_to_omit_them():
 
 
 def test_task_version_bumped_so_stale_caches_are_invalidated():
-    assert schema.TASK_VERSION == "v3.1"
+    assert schema.TASK_VERSION == "v3.2"
 
 
 def test_v3_usage_counts_only_event_titles():
@@ -475,3 +475,120 @@ def test_report_card_includes_currency_and_emission_checks():
     card = checks.report_card(_stamped(_event_results(novelty="first_report")))
     assert "results_current" in card
     assert "v3_spurious_emission" in card
+
+
+# --- schema v3.2: the language bridge ---------------------------------------
+
+
+def _day_frame(rows):
+    import pandas as pd
+
+    return pd.DataFrame(
+        [
+            {
+                "timestamp_utc": pd.Timestamp(f"2024-02-15 {h:02d}:00"),
+                "headline_id": f"h{i}",
+                "page_title": title,
+                "themes": "[]",
+                "src_lang": lang,
+            }
+            for i, (h, title, lang) in enumerate(rows)
+        ]
+    )
+
+
+def test_bridge_langs_is_the_measured_nine():
+    from metals.annotate.multilang import BRIDGE_LANGS
+
+    assert BRIDGE_LANGS == {"zho", "vie", "ara", "tur", "tha", "kor", "ind", "ron", "jpn"}
+
+
+def test_admit_bridge_and_base_paths():
+    from metals.annotate.titles import _admit
+
+    df = _day_frame(
+        [
+            (1, "黄金价格创新高", "zho"),  # bridge: zho terms
+            (2, "Liderii AUR țin cu Trump", "ron"),  # party — must NOT admit
+            (3, "Prețul la aur crește", "ron"),  # metal — bridge admits
+            (4, "El precio del oro sube", "spa"),  # spa dropped from bridge — no admit
+            (5, "Gold hits record high", "eng"),  # base gate
+            (6, "Goldpreis steigt weiter", "deu"),  # base gate cross-language (\bgold... no —
+            # "Goldpreis" is one word; \bgold\b does NOT match inside it. Base won't admit;
+            # deu is not in the bridge either. Verifies the drop is real.
+            (7, "Team wins gold medal again", "eng"),  # stop-phrase veto
+        ]
+    )
+    keep, via_bridge = _admit(df)
+    assert bool(keep.iloc[0]) and bool(via_bridge.iloc[0])
+    assert not bool(keep.iloc[1])
+    assert bool(keep.iloc[2]) and bool(via_bridge.iloc[2])
+    assert not bool(keep.iloc[3])  # dropped language stays dropped
+    assert bool(keep.iloc[4]) and not bool(via_bridge.iloc[4])
+    assert not bool(keep.iloc[5])
+    assert not bool(keep.iloc[6])
+
+
+def test_allocate_proportional_with_ceiling_and_remainders():
+    from metals.annotate.titles import _allocate
+
+    # zho dominates but the ceiling holds; remainder goes to the next largest.
+    alloc = _allocate({"zho": 100, "vie": 30, "kor": 2}, budget=50, ceiling=20)
+    assert alloc["zho"] == 20  # capped
+    assert alloc["kor"] == 2  # never more than its count
+    assert sum(alloc.values()) <= 50
+    # Deterministic:
+    assert alloc == _allocate({"zho": 100, "vie": 30, "kor": 2}, budget=50, ceiling=20)
+
+
+def test_allocate_leaves_slack_when_everything_caps():
+    from metals.annotate.titles import _allocate
+
+    alloc = _allocate({"a": 3, "b": 2}, budget=50, ceiling=50)
+    assert alloc == {"a": 3, "b": 2}  # slack remains for the caller
+
+
+def test_language_stratified_cap_reserves_base_floor():
+
+    from metals.annotate.titles import _select_language_stratified
+
+    rows = [(9 + (i % 12), f"Gold headline {i}", "eng") for i in range(200)]
+    rows += [(i % 24, f"黄金标题 {i}", "zho") for i in range(300)]
+    df = _day_frame(rows)
+    df["_via_bridge"] = df["src_lang"] == "zho"
+    kept = _select_language_stratified(df, 100)
+    assert len(kept) == 100
+    n_base = int((~kept["_via_bridge"]).sum())
+    assert n_base >= 50  # base floor honored
+    n_zho = int((kept["src_lang"] == "zho").sum())
+    assert n_zho <= 50  # bridge share bounded
+    assert list(kept["timestamp_utc"]) == sorted(kept["timestamp_utc"])  # chronological
+
+
+def test_language_stratified_slack_flows_to_bridge():
+    from metals.annotate.titles import _select_language_stratified
+
+    # Base has only 10 titles; bridge should absorb the leftover budget.
+    rows = [(13, f"Gold headline {i}", "eng") for i in range(10)]
+    rows += [(i % 24, f"黄金标题 {i}", "zho") for i in range(120)]
+    rows += [(i % 24, f"giá vàng {i}", "vie") for i in range(120)]
+    df = _day_frame(rows)
+    df["_via_bridge"] = df["src_lang"] != "eng"
+    kept = _select_language_stratified(df, 100)
+    assert len(kept) == 100
+    assert int((~kept["_via_bridge"]).sum()) == 10  # all of base, no more exists
+
+
+def test_prompt_declares_any_language_rule():
+    assert "Titles may be in ANY language" in schema.SYSTEM_PROMPT
+    assert "original script" in schema.SYSTEM_PROMPT
+
+
+def test_offtopic_by_lang_pending_without_run_pilot_frame():
+    res = checks.offtopic_by_lang(_event_results())  # fixture lacks n_titles
+    assert len(res) == 1 and res[0].passed is None
+
+
+def test_report_card_includes_offtopic_split_row():
+    card = checks.report_card(_stamped(_event_results()))
+    assert "offtopic_by_lang" in card

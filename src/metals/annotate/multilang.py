@@ -29,6 +29,18 @@ terms are plain substrings/stems and take no ``(?i)`` (no case to fold).
 # Bump when terms/stops change; recorded into sample/results provenance.
 TERMS_VERSION = "v2"
 
+# The PRODUCTION bridge set (schema v3.2 freeze, 2026-07-23): the nine languages
+# whose measured precision cleared the 0.60 bar / 0.58 eng anchor — six from the
+# first mini-batch untouched, three promoted by the terms-v2 retest (jpn 0.68,
+# ind 0.62, ron 0.61). ~265 admitted/day at measured precisions ≈ +195 relevant
+# titles/day (~doubles the English gate's ~161). The other eleven languages'
+# terms/stops remain below as the measurement record — they re-enter only via a
+# smarter gate (LLM pre-gate decided at the pilot→full-run boundary), not via
+# more stop words (journal 2026-07-23: residual noise is diffuse).
+BRIDGE_LANGS: frozenset[str] = frozenset(
+    {"zho", "vie", "ara", "tur", "tha", "kor", "ind", "ron", "jpn"}
+)
+
 LANG_TERMS: dict[str, str] = {
     "zho": "黄金|白银|贵金属|金价|银价|铂|钯|黃金|白銀|貴金屬|金價|銀價|鉑|鈀",
     "spa": r"(?i)\b(?:oro|plata|platino|paladio|rodio|lingotes?)\b|metales preciosos",

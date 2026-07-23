@@ -396,6 +396,64 @@ def v3_spurious_emission(df: pd.DataFrame) -> CheckResult:
     )
 
 
+def offtopic_by_lang(df: pd.DataFrame, max_langs: int = 12) -> list[CheckResult]:
+    """Report-only (v3.2): judged-irrelevant share per src_lang on blind rows.
+
+    Joins per-title records back to languages by position: both variants
+    annotate ``load_day_titles(date)``'s numbered list, whose ``langs`` field is
+    aligned by index. Guarded — computed only for frames that carry
+    ``n_titles`` (real ``run_pilot`` output) and skipped when the reloaded day
+    no longer matches the stored count (code/DB drift), so offline fixtures and
+    stale caches degrade to a pending row instead of a wrong number.
+    """
+    if "n_titles" not in df.columns:
+        return [
+            CheckResult(
+                "offtopic_by_lang", None, "-", None, "frame lacks n_titles — not a run_pilot frame"
+            )
+        ]
+    from metals.annotate.titles import load_day_titles
+
+    tallies: dict[str, list[int]] = {}  # lang -> [irrelevant, total]
+    skipped = 0
+    for _, row in _blind(df).iterrows():
+        try:
+            dt = load_day_titles(row["date"])
+        except Exception:
+            skipped += 1
+            continue
+        if not dt.langs or len(dt.titles) != int(row["n_titles"]):
+            skipped += 1
+            continue
+        for t in _titles(row["raw_json"]):
+            i = t.get("id")
+            if not isinstance(i, int) or not 1 <= i <= len(dt.langs):
+                continue
+            bucket = tallies.setdefault(dt.langs[i - 1], [0, 0])
+            bucket[1] += 1
+            bucket[0] += int(not t.get("relevant"))
+    if not tallies:
+        return [
+            CheckResult(
+                "offtopic_by_lang", None, "-", None, f"no joinable days ({skipped} skipped)"
+            )
+        ]
+    results: list[CheckResult] = []
+    ranked = sorted(tallies.items(), key=lambda kv: -kv[1][1])[:max_langs]
+    for lang, (irr, tot) in ranked:
+        results.append(
+            CheckResult(
+                f"offtopic[{lang}]",
+                float(irr / tot),
+                "report-only",
+                None,
+                f"{irr}/{tot} titles judged irrelevant"
+                + (f" ({skipped} days skipped)" if skipped else ""),
+            )
+        )
+    return results
+
+
 def report_card(df: pd.DataFrame) -> str:
     """Assemble the pre-registered pass/fail card."""
     results = [
@@ -406,6 +464,7 @@ def report_card(df: pd.DataFrame) -> str:
         *v3_field_usage(df),
         *v3_date_blind_drift(df),
         v3_spurious_emission(df),
+        *offtopic_by_lang(df),
     ]
     results.append(
         CheckResult(

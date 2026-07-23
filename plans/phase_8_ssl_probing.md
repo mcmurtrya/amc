@@ -790,7 +790,20 @@ table in journal.md 2026-07-23; results parquet in data/processed/. **Retest und
 (stop-lists + case fixes, same day): jpn 0.02→0.68, ron 0.22→0.61, ind 0.58→0.62 promoted;
 11 languages dropped (diffuse residual noise — Romance bare-metal sports metonymy, Slavic/
 Greek gold-idioms, German surnames). Final bridge set: 9 languages, ~+195 relevant
-titles/day (~doubles the English gate's ~161). v3.2 freeze pending.** (2) The `page_title` slug boundary at 2019-09-22 is an **upstream GDELT feature** (0%
+titles/day (~doubles the English gate's ~161). **
+
+**Schema v3.2 FROZEN (2026-07-23).** The language bridge is production: `multilang.BRIDGE_LANGS`
+(nine measured languages) admit via native terms in `titles.py._admit`; the cap is
+**base-gate-stratified** — the pre-v3.2 gate (English keywords + the theme lifeline, any
+language) keeps ≥50% of the 250 slots, bridge languages share the rest proportionally with a
+40% per-language ceiling (zho bounded at ~50 slots), slack flowing both ways; the prompt
+gains the any-language ABSOLUTE RULE (`event_entity` verbatim in original script);
+`TASK_VERSION → v3.2`. Stage-0 card gains report-only `offtopic[lang]` rows (per-language
+judged-irrelevant share, position-joined via `DayTitles.langs`, drift-guarded). Live smoke
+2023-06-01: 1,255 admitted/day, 250 kept (eng 66, zho 54, tur 34, ara 34, vie 22, ind 19…).
+Cost per day unchanged (cap binds). Eleven dropped languages re-enter only via the LLM
+pre-gate decision at the pilot→full-run boundary. Remaining before the pilot:
+**pre-register the Stage-0 gate in journal.md per §4.4**, then run. (2) The `page_title` slug boundary at 2019-09-22 is an **upstream GDELT feature** (0%
 before, 99.47% after — GDELT never emitted the GKG `<PAGE_TITLE>` tag earlier), so the
 annotator is titleless before then, unfixably. (3) **Corpus INGESTION gaps** within the era —
 mapped by `scripts/coverage_audit.py`: **48 missing days in 4 windows**. One (2017-08-29) is the

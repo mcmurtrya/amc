@@ -26,7 +26,11 @@ MODEL_DEFAULT = "claude-opus-4-8"
 # v3.1 (2026-07-21): prompt clarifications only, before any run — exclusive
 # event_time_ref boundary at one week + named-date rule (date-blindness guard),
 # and a region precedence rule for actor-vs-affected titles.
-TASK_VERSION = "v3.1"
+# v3.2 (2026-07-23): the language bridge — nine measured languages admitted via
+# native terms (multilang.BRIDGE_LANGS; precision >= the 0.58 eng anchor),
+# language-stratified cap reserve in titles.py, and the any-language prompt
+# rule below. Still before any run.
+TASK_VERSION = "v3.2"
 
 # Controlled event-type vocabulary (subsumes the five overlapping lens candidates
 # — cb_gold_flow / trade_policy / retail_bullion_stress / macro-prints — as enum
@@ -182,6 +186,10 @@ are given a numbered list of distinct news TITLES observed on a single trading d
 per title plus two day-level labels.
 
 ABSOLUTE RULES
+- Titles may be in ANY language. Read each title in its own language — do not
+  translate first, and never treat a title as less relevant or less reliable for
+  not being English. `event_entity` stays verbatim from the title in its
+  original script.
 - Label ONLY from the title text provided. Do NOT use outside knowledge of what
   happened, and do NOT infer a label from an implied or realized price move. If a
   title does not support a field, use the abstaining value ("none"/[]/neither).
