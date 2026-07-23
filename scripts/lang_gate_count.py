@@ -15,38 +15,12 @@ the LLM `relevant` flag); this measures the size of the composition trade.
 
 import re
 
+from metals.annotate.multilang import LANG_TERMS
 from metals.annotate.titles import _STOP_RE, METAL_TITLE_RE
 from metals.data.db import connection
 
 ENG = METAL_TITLE_RE.pattern
 STOP = _STOP_RE.pattern
-
-# First-cut native terms. Latin-script short words carry \b only where both
-# edge characters are ASCII (RE2 \b is ASCII-only; a trailing \b after a
-# diacritic inverts its meaning). CJK/Arabic/Cyrillic terms are plain
-# substrings/stems.
-LANG_TERMS: dict[str, str] = {
-    "zho": "黄金|白银|贵金属|金价|银价|铂|钯|黃金|白銀|貴金屬|金價|銀價|鉑|鈀",
-    "spa": r"\b(?:oro|plata|platino|paladio|rodio|lingotes?)\b|metales preciosos",
-    "vie": "giá vàng|vàng|bạch kim|paladi|kim loại quý",
-    "rus": "золот|серебр|платин|паллади|драгметалл|драгоценн",
-    "fra": r"l'or\b|\bplatine|métaux précieux|\blingot|once d'or",
-    "deu": "gold|silber|platin|palladium|edelmetall",
-    "tur": r"\baltın\b|\baltin\b|gümüş|\bplatin\b|paladyum|külçe",
-    "ben": "সোনা|স্বর্ণ|রুপা|রূপা|প্লাটিনাম|প্যালাডিয়াম",
-    "ita": r"\b(?:oro|argento|platino|palladio|lingott\w*)\b|metalli preziosi",
-    "ara": "الذهب|الفضة|بلاتين|بلاديوم|روديوم|المعادن الثمينة",
-    "kor": "금값|금시세|금 시세|백금|팔라듐|귀금속|금괴|은값",
-    "ind": r"\b(?:emas|perak|platina|paladium)\b|logam mulia|harga emas",
-    "ell": "χρυσ|ασήμι|πλατίν|παλλάδι",
-    "jpn": "金価格|金相場|金先物|プラチナ|パラジウム|貴金属|ゴールド|銀価格",
-    "por": r"\b(?:ouro|prata|platina|paládio|paladio)\b|metais preciosos",
-    "pol": "złoto|złota|srebr|platyn|pallad",
-    "ukr": "золот|срібл|срібн|платин|палад",
-    "tha": "ทองคำ|ราคาทอง|แพลตทินัม|แพลเลเดียม",
-    "ron": r"\baur\b|aurul|argint|platin|paladiu",
-    "hin": "सोना|सोने|चांदी|चाँदी|प्लैटिनम|पैलेडियम",
-}
 
 # Sanity: every pattern must compile under Python re (superset check for RE2).
 for pat in LANG_TERMS.values():

@@ -3003,3 +3003,35 @@ rows. Scan: 62.2M title-era rows, 2,416 days, ~90 s, read-only.
 Sanity note on 576 vs the plan's "mean ~696": mine counts exact-duplicate-collapsed unique
 titles per *calendar* day over 2,416 days (weekends included); the 696 figure was
 `_normalize`-deduped candidates on sampled days. Consistent, different denominators.
+
+## 2026-07-23 (later) — Precision mini-batch built + submitted (language-bridge step 1)
+
+Step 1 of the v3.2 sequence: measure per-language precision of the recall-first
+multilingual terms before any adoption decision. Built as a library module + thin script,
+mirroring the pilot's Batch machinery, then submitted the paid batch.
+
+- **`src/metals/annotate/multilang.py`** — `LANG_TERMS` extracted to a single source of
+  truth (was inline in `scripts/lang_gate_count.py`, now imported by both consumers), with
+  the known ambiguities documented in place.
+- **`src/metals/annotate/precision.py`** — the mini-batch: deterministic per-language
+  sampler (hash-seeded, dedup-by-folded-title, one read-only scan; non-eng pools = NEW
+  admissions only, eng pool = current gate as a judge-strictness ANCHOR), judge prompt +
+  strict JSON schema (`relevant` + a 10-value false-positive taxonomy: sports/award, place,
+  person/brand, colour-adjective, money-currency, idiom, entertainment, fashion-jewellery,
+  other, not_applicable), chunked Batch submission (50 titles/request), provenance-stamped
+  parquet (judge_version/prompt_hash/batch_id/pulled_at), and a report with per-language
+  precision, verdicts vs the 0.60 bar, and example FPs as stop-list material.
+  Explicitly documented as NOT date-blind — a pre-filter measurement, not research
+  annotation; precision here = share of cap slots the production `relevant` flag would not
+  waste. Judge fingerprinted (`judge_prompt_hash`) like the main instrument.
+- **`scripts/lang_precision_batch.py`** — `sample` / `estimate` / `run` / `report` CLI.
+- **Scope upgrade:** measured all 20 languages + eng anchor (2,100 titles, 42 requests)
+  rather than the top-12 — the batch estimate came to **$0.75** Opus (batch pricing), so
+  restricting the measurement to save money was pointless. The earlier "$2–5" guess was
+  high; actual input ~65.5k tokens, modelled output ~46.6k.
+- **Quality:** 13 offline tests (`tests/test_annotate_precision.py`) — schema strictness,
+  chunk/custom-id round-trip, report math incl. verdicts and the unjudged-titles warning,
+  prompt names the ambiguity traps (vàng/plata/złoty), and a guard that
+  `lang_gate_count.py` really does import the shared terms. ruff + mypy clean (65 files).
+- **Submitted:** sample drawn (deterministic seed), batch submitted on `claude-opus-4-8`,
+  poll running. Results parquet + report to be recorded here when it lands.
