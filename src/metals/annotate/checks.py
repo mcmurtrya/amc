@@ -416,12 +416,11 @@ def v3_spurious_emission(df: pd.DataFrame) -> CheckResult:
 def offtopic_by_lang(df: pd.DataFrame, max_langs: int = 12) -> list[CheckResult]:
     """Report-only (v3.2): judged-irrelevant share per src_lang on blind rows.
 
-    Joins per-title records back to languages by position: both variants
-    annotate ``load_day_titles(date)``'s numbered list, whose ``langs`` field is
-    aligned by index. Guarded — computed only for frames that carry
-    ``n_titles`` (real ``run_pilot`` output) and skipped when the reloaded day
-    no longer matches the stored count (code/DB drift), so offline fixtures and
-    stale caches degrade to a pending row instead of a wrong number.
+    Joins per-title records to languages by position. v3.3: the language list
+    comes from the row's PERSISTED ``langs_json`` (written at submit time), so
+    the check needs no database and cannot drift from what was actually
+    annotated. Legacy frames without the column fall back to reloading
+    ``load_day_titles(date)``, guarded by the stored ``n_titles`` count.
     """
     if "n_titles" not in df.columns:
         return [
@@ -429,24 +428,38 @@ def offtopic_by_lang(df: pd.DataFrame, max_langs: int = 12) -> list[CheckResult]
                 "offtopic_by_lang", None, "-", None, "frame lacks n_titles — not a run_pilot frame"
             )
         ]
-    from metals.annotate.titles import load_day_titles
+
+    def _row_langs(row: pd.Series) -> list[str] | None:
+        raw = row.get("langs_json")
+        if isinstance(raw, str) and raw:
+            try:
+                langs = json.loads(raw)
+            except json.JSONDecodeError:
+                return None
+            return langs if len(langs) == int(row["n_titles"]) else None
+        # Legacy frame (pre-v3.3): re-derive, guarded against drift.
+        from metals.annotate.titles import load_day_titles
+
+        try:
+            dt = load_day_titles(row["date"])
+        except Exception:
+            return None
+        if not dt.langs or len(dt.titles) != int(row["n_titles"]):
+            return None
+        return dt.langs
 
     tallies: dict[str, list[int]] = {}  # lang -> [irrelevant, total]
     skipped = 0
     for _, row in _blind(df).iterrows():
-        try:
-            dt = load_day_titles(row["date"])
-        except Exception:
-            skipped += 1
-            continue
-        if not dt.langs or len(dt.titles) != int(row["n_titles"]):
+        langs = _row_langs(row)
+        if langs is None:
             skipped += 1
             continue
         for t in _titles(row["raw_json"]):
             i = t.get("id")
-            if not isinstance(i, int) or not 1 <= i <= len(dt.langs):
+            if not isinstance(i, int) or not 1 <= i <= len(langs):
                 continue
-            bucket = tallies.setdefault(dt.langs[i - 1], [0, 0])
+            bucket = tallies.setdefault(langs[i - 1], [0, 0])
             bucket[1] += 1
             bucket[0] += int(not t.get("relevant"))
     if not tallies:

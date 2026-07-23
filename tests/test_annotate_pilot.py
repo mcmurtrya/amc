@@ -720,3 +720,22 @@ def test_date_in_title_share_diagnostic():
     assert res.value == 0.5 and res.passed is None
     legacy = checks.date_in_title_share(_stamped(_event_results()))
     assert legacy.passed is None and "predates" in legacy.detail
+
+
+def test_offtopic_by_lang_uses_persisted_langs_without_db():
+    """v3.3: the split joins on persisted langs_json — no database reload."""
+    df = _stamped(_event_results())
+    df["n_titles"] = 2
+    df["langs_json"] = json.dumps(["ron", "zho"])
+    res = {c.name: c for c in checks.offtopic_by_lang(df)}
+    # Both fixture titles are relevant=True -> 0 irrelevant in each language.
+    assert res["offtopic[ron]"].value == 0.0
+    assert res["offtopic[zho]"].value == 0.0
+
+
+def test_offtopic_by_lang_skips_on_langs_count_mismatch():
+    df = _stamped(_event_results())
+    df["n_titles"] = 2
+    df["langs_json"] = json.dumps(["ron"])  # drifted: 1 lang vs 2 titles
+    res = checks.offtopic_by_lang(df)
+    assert len(res) == 1 and res[0].passed is None and "skipped" in res[0].detail

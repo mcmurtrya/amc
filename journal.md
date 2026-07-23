@@ -3321,7 +3321,9 @@ JSON-decode path) were either folded in free or documented.
 ### amendment policy; all unlisted terms carry over unchanged)
 
 - **Instrument:** `TASK_VERSION v3.3`; `prompt_hash 66beed5f44312fe0`
-  (model `claude-opus-4-8`); code state = git `ec57579`. Reason for supersession:
+  (model `claude-opus-4-8`); code state = git `ec57579`, amended to the fix-completeness
+  commit of the same day (offtopic_by_lang persisted-join — see addendum below; check-side
+  only, thresholds and prompt untouched, still pre-submission). Reason for supersession:
   the three run-voiding defects above — each fix is pre-spend and instrument-improving;
   no threshold changes.
 - **Sample:** unchanged — seed 42, 80 days (20/15/45), `sample_sha256 62a6e9841382436a`
@@ -3340,3 +3342,18 @@ JSON-decode path) were either folded in free or documented.
 - **Verdict semantics pinned:** GREEN requires every `GATED_AUTO` check computed and
   passed; any gated check uncomputable → INCOMPLETE (never GREEN); any failure → RED.
 - Cost ceiling, audit protocol, scope-honesty clause, and all other branches: unchanged.
+
+## 2026-07-23 (addendum) — Fix-completeness audit: one residual closed; suite 636 → green
+
+Verified every one of the 14 confirmed review findings against the code (marker-level +
+line-level). Thirteen were fully closed by `ec57579`/`dd8d83c`. One was **partially**
+closed: finding [9] asked that `offtopic_by_lang` join on persisted provenance instead of
+re-deriving languages from the mutable DB — the provenance was persisted (`langs_json`)
+but the check still reloaded via `load_day_titles`. Closed now: the split reads the row's
+`langs_json` (count-validated against `n_titles`; no DB access), with the reload path kept
+only as a guarded fallback for legacy frames. +2 tests (persisted-join without DB;
+count-mismatch skip). This is check-side gate code — committed BEFORE any submission, so
+the superseding pre-registration's code pin moves to this commit.
+
+Full suite after the review fixes: **636 passed** (10m21s). 76 annotate/precision tests;
+ruff + mypy clean.
