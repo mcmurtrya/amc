@@ -314,7 +314,7 @@ def test_prompt_documents_the_conditional_fields_and_says_to_omit_them():
 
 
 def test_task_version_bumped_so_stale_caches_are_invalidated():
-    assert schema.TASK_VERSION == "v3.2"
+    assert schema.TASK_VERSION == "v3.3"
 
 
 def test_v3_usage_counts_only_event_titles():
@@ -592,3 +592,131 @@ def test_offtopic_by_lang_pending_without_run_pilot_frame():
 def test_report_card_includes_offtopic_split_row():
     card = checks.report_card(_stamped(_event_results()))
     assert "offtopic_by_lang" in card
+
+
+# --- v3.3 pre-spend review fixes ---------------------------------------------
+
+
+def test_mask_dates_full_dates_years_and_price_protection():
+    from metals.annotate.titles import _mask_dates
+
+    assert _mask_dates("Gold Rate - March 30, 2020") == "Gold Rate - [DATE]"
+    assert _mask_dates("Giá vàng hôm nay 28/10/2019") == "Giá vàng hôm nay [DATE]"
+    assert _mask_dates("Fed on 2023-06-14") == "Fed on [DATE]"
+    assert _mask_dates("2024年10月28日黄金") == "[DATE]黄金"
+    assert _mask_dates("Gold outlook 2024") == "Gold outlook [YEAR]"
+    # Prices survive: comma-grouped and currency-prefixed forms are protected.
+    assert _mask_dates("Gold falls to 1,950 an ounce") == "Gold falls to 1,950 an ounce"
+    assert _mask_dates("Gold at $1950 resistance") == "Gold at $1950 resistance"
+
+
+def test_mask_applies_to_both_variants_identically():
+    # Masking happens in titles.py BEFORE build_params, so blind and dated
+    # variants receive identical (masked) text — only the Date: header differs.
+    masked = "Gold Rate - [DATE]"
+    blind = schema.build_user_message([masked])
+    dated = schema.build_user_message([masked], show_date=True, date="2020-03-30")
+    assert masked in blind and masked in dated
+    assert blind == dated.replace("Date: 2020-03-30\n", "")
+
+
+def test_allocate_zero_total_guard():
+    from metals.annotate.titles import _allocate
+
+    assert _allocate({"a": 0, "b": 0}, budget=5, ceiling=3) == {"a": 0, "b": 0}
+
+
+def test_report_card_not_green_when_gated_checks_pending():
+    """An all-error batch must yield INCOMPLETE, never GREEN."""
+    df = _stamped(_event_results())
+    df["ok"] = False  # every request errored
+    card = checks.report_card(df)
+    assert "GREEN" not in card
+    assert "INCOMPLETE" in card
+
+
+def test_report_card_red_on_any_failure_still_wins():
+    df = _stamped(_event_results(), task_version="v0.0")  # results_current FAIL
+    card = checks.report_card(df)
+    assert "RED" in card
+
+
+def test_audit_accuracy_agreement_math(tmp_path):
+    import pandas as pd
+
+    df = _stamped(_event_results())  # blind row: id1 relevant=True, id2 relevant=True
+    gold = pd.DataFrame(
+        [
+            {"date": "2020-02-20", "id": 1, "relevant": 1},  # agree
+            {"date": "2020-02-20", "id": 2, "relevant": 0},  # disagree
+            {"date": "2099-01-01", "id": 1, "relevant": 1},  # unjoinable
+        ]
+    )
+    csv = tmp_path / "gold.csv"
+    gold.to_csv(csv, index=False)
+    res = checks.audit_accuracy(df, csv)
+    assert res.value == 0.5
+    assert res.passed is False
+    assert "1 audit rows unjoinable" in res.detail
+
+
+def test_repro_agreement_math_and_sha_exclusion():
+    import pandas as pd
+
+    def frame(narrative, relevant2, sha):
+        raw = json.dumps(
+            {
+                "gold_narrative_regime": narrative,
+                "monetary_stance_day": "none",
+                "titles": [
+                    {"id": 1, "relevant": True},
+                    {"id": 2, "relevant": relevant2},
+                ],
+            }
+        )
+        return pd.DataFrame(
+            [
+                {
+                    "date": "2020-02-20",
+                    "variant": "blind",
+                    "ok": True,
+                    "gold_narrative_regime": narrative,
+                    "monetary_stance_day": "none",
+                    "title_sha256": sha,
+                    "raw_json": raw,
+                }
+            ]
+        )
+
+    same = checks.repro_agreement(frame("safe_haven", True, "s1"), frame("safe_haven", True, "s1"))
+    assert "= 1.00  PASS" in same
+    diverged = checks.repro_agreement(
+        frame("safe_haven", True, "s1"), frame("cb_demand", False, "s1")
+    )
+    assert "FAIL" in diverged
+    excluded = checks.repro_agreement(
+        frame("safe_haven", True, "s1"), frame("safe_haven", True, "s2")
+    )
+    assert "EXCLUDED" in excluded  # different title lists never compared
+
+
+def test_run_pilot_refuses_overwrite(tmp_path):
+    import pandas as pd
+
+    out = tmp_path / "results.parquet"
+    out.write_bytes(b"existing")
+    sample = pd.DataFrame({"date": ["2020-01-02"], "stratum": ["random"]})
+    import pytest as _pytest
+
+    with _pytest.raises(FileExistsError):
+        pilot.run_pilot(sample, out_path=out)
+
+
+def test_date_in_title_share_diagnostic():
+    df = _stamped(_event_results())
+    df["n_titles"] = 2
+    df["n_date_masked"] = 1
+    res = checks.date_in_title_share(df)
+    assert res.value == 0.5 and res.passed is None
+    legacy = checks.date_in_title_share(_stamped(_event_results()))
+    assert legacy.passed is None and "predates" in legacy.detail

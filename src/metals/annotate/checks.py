@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from pathlib import Path
 
 import pandas as pd
 
@@ -31,6 +32,22 @@ MIN_FOMC_RECALL = 0.50  # fraction of FOMC days where a monetary stance fires
 MIN_V3_FILL = 0.80
 
 _PGM = {"platinum", "palladium"}
+
+# The pre-registered AUTO-gated checks (journal 2026-07-23): the card may print
+# GREEN only when EVERY one of these is computed AND passed. A gated check that
+# is merely PENDING (e.g. an all-error batch leaves coverage uncomputable) must
+# yield INCOMPLETE, never GREEN — report-only diagnostics stay excluded.
+# human_audit_accuracy is gated but manual, so it does not block the interim
+# GREEN (whose message explicitly says "proceed to human audit").
+GATED_AUTO = (
+    "results_current",
+    "any_metal_coverage",
+    "pgm_stress_coverage",
+    "fomc_recall",
+    "date_blind_drift",
+    "novelty_fill",
+    "event_time_ref_fill",
+)
 
 
 @dataclass(frozen=True)
@@ -454,6 +471,121 @@ def offtopic_by_lang(df: pd.DataFrame, max_langs: int = 12) -> list[CheckResult]
     return results
 
 
+def date_in_title_share(df: pd.DataFrame) -> CheckResult:
+    """Report-only (v3.3): share of annotated titles whose text carried a masked
+    date/year. Measures how much blindness the masking actually bought."""
+    if "n_date_masked" not in df.columns or "n_titles" not in df.columns:
+        return CheckResult(
+            "date_in_title_share", None, "-", None, "frame predates v3.3 mask provenance"
+        )
+    blind = _blind(df)
+    tot = int(blind["n_titles"].sum())
+    if not tot:
+        return CheckResult("date_in_title_share", None, "-", None, "no blind titles")
+    masked = int(blind["n_date_masked"].sum())
+    return CheckResult(
+        "date_in_title_share",
+        float(masked / tot),
+        "report-only",
+        None,
+        f"{masked}/{tot} annotated titles had a date/year masked from their text",
+    )
+
+
+def audit_accuracy(df: pd.DataFrame, audit_csv: str | Path) -> CheckResult:
+    """The human-audit gate: per-title `relevant` agreement vs a hand-labelled CSV.
+
+    CSV columns: ``date, id, relevant`` (0/1 or true/false), labelled from an
+    ``audit-template`` export — the auditor sees titles only, never model
+    outputs. Joins to BLIND rows by (date, id). Gate: >= 0.80 agreement.
+    """
+    gold = pd.read_csv(audit_csv)
+    need = {"date", "id", "relevant"}
+    if not need <= set(gold.columns):
+        return CheckResult(
+            "human_audit_accuracy", None, ">= 80%", None, f"audit csv missing columns {need}"
+        )
+    model: dict[tuple[str, int], bool] = {}
+    for _, row in _blind(df).iterrows():
+        for t in _titles(row["raw_json"]):
+            if isinstance(t.get("id"), int):
+                model[(str(row["date"]), int(t["id"]))] = bool(t.get("relevant"))
+    agree = tot = 0
+    for _, g in gold.iterrows():
+        key = (str(g["date"]), int(g["id"]))
+        if key not in model:
+            continue
+        tot += 1
+        agree += int(bool(model[key]) == bool(g["relevant"]))
+    if tot == 0:
+        return CheckResult(
+            "human_audit_accuracy", None, ">= 80%", None, "no joinable audited titles"
+        )
+    acc = agree / tot
+    return CheckResult(
+        "human_audit_accuracy",
+        float(acc),
+        ">= 80%",
+        bool(acc >= 0.80),
+        f"{agree}/{tot} audited titles agree on `relevant` "
+        f"({len(gold) - tot} audit rows unjoinable)",
+    )
+
+
+def repro_agreement(df_a: pd.DataFrame, df_b: pd.DataFrame) -> str:
+    """The pre-registered reproducibility addendum, computed.
+
+    Day labels (gold_narrative_regime + monetary_stance_day) joined on date over
+    blind rows: agreement >= 0.80. Per-title `relevant` joined on (date, id):
+    agreement >= 0.90. Titles must be identical (title_sha256) or the pair is
+    excluded and reported — agreement across different inputs is meaningless.
+    """
+    a, b = _blind(df_a), _blind(df_b)
+    on_date_a = a.set_index("date")
+    on_date_b = b.set_index("date")
+    shared = sorted(set(on_date_a.index) & set(on_date_b.index))
+    mismatched = [
+        d
+        for d in shared
+        if "title_sha256" in a.columns
+        and "title_sha256" in b.columns
+        and on_date_a.loc[d, "title_sha256"] != on_date_b.loc[d, "title_sha256"]
+    ]
+    usable = [d for d in shared if d not in mismatched]
+    day_tot = day_agree = 0
+    for d in usable:
+        for col in ("gold_narrative_regime", "monetary_stance_day"):
+            day_tot += 1
+            day_agree += int(on_date_a.loc[d, col] == on_date_b.loc[d, col])
+    rel_a: dict[tuple[str, int], bool] = {}
+    for _, row in a[a["date"].isin(usable)].iterrows():
+        for t in _titles(row["raw_json"]):
+            if isinstance(t.get("id"), int):
+                rel_a[(str(row["date"]), int(t["id"]))] = bool(t.get("relevant"))
+    rel_tot = rel_agree = 0
+    for _, row in b[b["date"].isin(usable)].iterrows():
+        for t in _titles(row["raw_json"]):
+            key = (str(row["date"]), t.get("id"))
+            if isinstance(t.get("id"), int) and key in rel_a:
+                rel_tot += 1
+                rel_agree += int(rel_a[key] == bool(t.get("relevant")))
+    day_rate = day_agree / day_tot if day_tot else float("nan")
+    rel_rate = rel_agree / rel_tot if rel_tot else float("nan")
+    lines = [
+        f"Reproducibility over {len(usable)} shared days"
+        + (
+            f" ({len(mismatched)} EXCLUDED: title lists differ — {mismatched})"
+            if mismatched
+            else ""
+        ),
+        f"  day-label agreement:        {day_agree}/{day_tot} = {day_rate:.2f}  "
+        + ("PASS (>= 0.80)" if day_rate >= 0.80 else "FAIL (< 0.80)"),
+        f"  per-title relevant agree:   {rel_agree}/{rel_tot} = {rel_rate:.2f}  "
+        + ("PASS (>= 0.90)" if rel_rate >= 0.90 else "FAIL (< 0.90)"),
+    ]
+    return "\n".join(lines)
+
+
 def report_card(df: pd.DataFrame) -> str:
     """Assemble the pre-registered pass/fail card."""
     results = [
@@ -464,6 +596,7 @@ def report_card(df: pd.DataFrame) -> str:
         *v3_field_usage(df),
         *v3_date_blind_drift(df),
         v3_spurious_emission(df),
+        date_in_title_share(df),
         *offtopic_by_lang(df),
     ]
     results.append(
@@ -487,12 +620,16 @@ def report_card(df: pd.DataFrame) -> str:
         verdict = "PENDING" if r.passed is None else ("PASS" if r.passed else "FAIL")
         lines.append(f"  {r.name:<32}{v:>10}  {r.threshold:<12} {verdict}")
         lines.append(f"      {r.detail}")
-    computed = [r for r in results if r.passed is not None]
-    if computed and all(r.passed for r in computed):
-        gate = "GREEN (computed checks pass — proceed to human audit, then Stage 1)"
-    elif any(r.passed is False for r in computed):
+    by_name = {r.name: r for r in results}
+    gated = [by_name.get(n) for n in GATED_AUTO]
+    if any(r is not None and r.passed is False for r in results):
         gate = "RED (a computed check failed — stop or scope down; see details)"
+    elif all(r is not None and r.passed is True for r in gated):
+        gate = "GREEN (all auto-gated checks pass — proceed to human audit, then Stage 1)"
     else:
-        gate = "INCOMPLETE (run the batch and/or the date-blind A/B first)"
+        pending = [
+            n for n, r in zip(GATED_AUTO, gated, strict=True) if r is None or r.passed is None
+        ]
+        gate = f"INCOMPLETE (gated checks not yet computable: {', '.join(pending)})"
     lines += ["", f"  GATE: {gate}"]
     return "\n".join(lines)

@@ -12,6 +12,7 @@ parses the structured-output JSON, and caches results with provenance.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import time
@@ -241,6 +242,11 @@ def _client():  # -> anthropic.Anthropic
     return anthropic.Anthropic()
 
 
+def _title_sha(dt: DayTitles) -> str:
+    """Content fingerprint of the exact annotated title list (order-sensitive)."""
+    return hashlib.sha256("\x1f".join(dt.titles).encode("utf-8")).hexdigest()[:16]
+
+
 def _variants(date_blind_ab: bool) -> list[tuple[str, bool]]:
     # (variant_name, show_date). The date-visible arm is the leakage control.
     if date_blind_ab:
@@ -256,19 +262,35 @@ def run_pilot(
     out_path: str | Path,
     poll_seconds: int = 30,
     timeout_seconds: int = 24 * 3600,
+    batch_id: str | None = None,
+    overwrite: bool = False,
 ) -> pd.DataFrame:
     """Submit one Batch covering every (day, variant), poll, parse, and cache.
 
-    Returns one row per (date, variant) with the day labels, counts, and the raw
-    structured-output JSON (per-title records parsed downstream in ``checks``).
+    Crash-safe (v3.3): immediately after submission the batch id and per-day
+    provenance are written to ``<out_path>.batch.json`` and the id is printed —
+    a died poll is resumed with ``batch_id=...`` (skips the create, re-enters
+    poll/parse; title reload is deterministic). Refuses to overwrite an
+    existing ``out_path`` unless ``overwrite=True`` so a reproducibility re-run
+    cannot destroy the primary results. Each result row persists the annotated
+    titles, headline_ids, langs, a title-list sha256, mask counts, and token
+    usage, so the run's inputs remain verifiable and auditable after any DB or
+    filter change.
     """
     from anthropic.types.message_create_params import MessageCreateParamsNonStreaming
     from anthropic.types.messages.batch_create_params import Request
 
     client = _client()
     phash = sch.prompt_hash(model)
+    out = Path(out_path)
+    if out.exists() and not overwrite:
+        raise FileExistsError(
+            f"{out} exists — pass overwrite=True (or a different --out) so a "
+            "reproducibility re-run cannot clobber the primary results."
+        )
 
-    # Preload + de-dupe titles once per day (shared across variants).
+    # Preload + de-dupe titles once per day (shared across variants; the
+    # ordering is deterministic, so a resume reloads identical lists).
     dates = sample["date"].tolist()
     loaded: dict[str, DayTitles] = {d: load_day_titles(d) for d in dates}
 
@@ -291,15 +313,58 @@ def run_pilot(
     if not requests:
         raise RuntimeError("No annotatable days in sample (all title lists empty).")
 
-    batch = client.messages.batches.create(requests=requests)
-    batch_id = batch.id
+    sidecar = out.with_suffix(out.suffix + ".batch.json")
+    if batch_id is None:
+        batch = client.messages.batches.create(requests=requests)
+        batch_id = batch.id
+        # Persist BEFORE polling: if anything below dies, the paid batch is
+        # recoverable via --batch-id instead of a second spend.
+        sidecar.parent.mkdir(parents=True, exist_ok=True)
+        sidecar.write_text(
+            json.dumps(
+                {
+                    "batch_id": batch_id,
+                    "model": model,
+                    "prompt_hash": phash,
+                    "task_version": sch.TASK_VERSION,
+                    "created_at": datetime.now(UTC).isoformat(),
+                    "dates": {
+                        d: {
+                            "stratum": s,
+                            "n_titles": len(loaded[d].titles),
+                            "n_raw": loaded[d].n_raw,
+                            "n_dropped_cap": loaded[d].n_dropped_cap,
+                            "n_date_masked": loaded[d].n_date_masked,
+                            "title_sha256": _title_sha(loaded[d]),
+                        }
+                        for d, s in zip(sample["date"], sample["stratum"], strict=False)
+                        if loaded[d].titles
+                    },
+                },
+                indent=2,
+            )
+        )
+        print(f"Batch submitted: {batch_id} (sidecar: {sidecar})")
+    else:
+        print(f"Resuming batch {batch_id}")
+
     deadline = time.monotonic() + timeout_seconds
     while True:
-        b = client.messages.batches.retrieve(batch_id)
+        try:
+            b = client.messages.batches.retrieve(batch_id)
+        except Exception as exc:  # transient network/5xx beyond SDK retries
+            print(f"poll retry after error: {exc!r}")
+            time.sleep(min(poll_seconds * 4, 300))
+            if time.monotonic() > deadline:
+                raise
+            continue
         if b.processing_status == "ended":
             break
         if time.monotonic() > deadline:
-            raise TimeoutError(f"Batch {batch_id} did not finish within timeout.")
+            raise TimeoutError(
+                f"Batch {batch_id} did not finish within timeout; resume later "
+                f"with --batch-id {batch_id}."
+            )
         time.sleep(poll_seconds)
 
     pulled_at = datetime.now(UTC).isoformat()
@@ -319,6 +384,14 @@ def run_pilot(
             "n_titles": len(loaded[date].titles),
             "n_raw": loaded[date].n_raw,
             "n_dropped_cap": loaded[date].n_dropped_cap,
+            "n_date_masked": loaded[date].n_date_masked,
+            "title_sha256": _title_sha(loaded[date]),
+            "titles_json": json.dumps(loaded[date].titles, ensure_ascii=False),
+            "headline_ids_json": json.dumps(loaded[date].headline_ids),
+            "langs_json": json.dumps(loaded[date].langs),
+            "usage_input_tokens": None,
+            "usage_output_tokens": None,
+            "stop_reason": None,
             "ok": False,
             "gold_narrative_regime": None,
             "monetary_stance_day": None,
@@ -326,6 +399,9 @@ def run_pilot(
         }
         if result.result.type == "succeeded":
             msg = result.result.message
+            row["usage_input_tokens"] = getattr(msg.usage, "input_tokens", None)
+            row["usage_output_tokens"] = getattr(msg.usage, "output_tokens", None)
+            row["stop_reason"] = getattr(msg, "stop_reason", None)
             text = next((b.text for b in msg.content if b.type == "text"), "")
             try:
                 parsed = json.loads(text)
@@ -340,7 +416,6 @@ def run_pilot(
         rows.append(row)
 
     df = pd.DataFrame(rows).sort_values(["date", "variant"]).reset_index(drop=True)
-    out = Path(out_path)
     out.parent.mkdir(parents=True, exist_ok=True)
     df.to_parquet(out, index=False)
     return df

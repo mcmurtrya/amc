@@ -165,7 +165,7 @@ def draw_sample(per_lang: int = PER_LANG_SAMPLE, langs: list[str] | None = None)
     dedup AS (
         SELECT src_lang,
                lower(page_title)      AS title_key,
-               any_value(page_title)  AS title,
+               min(page_title)        AS title,  -- deterministic (any_value is not)
                min(d)                 AS d
         FROM pool
         GROUP BY 1, 2

@@ -145,6 +145,46 @@ class DayTitles:
     # src_lang per kept title, aligned with ``titles`` (v3.2 — used by the
     # per-language offtopic split in checks.py). Empty for pre-era/gap days.
     langs: list[str] = field(default_factory=list)
+    # Kept titles whose text carried a masked date/year (v3.3 blindness fix);
+    # feeds the report-only `date_in_title_share` diagnostic.
+    n_date_masked: int = 0
+
+
+# --- Date masking (v3.3) -----------------------------------------------------
+# Titles routinely embed the calendar date ("Gold Rate - March 30, 2020",
+# "Giá vàng hôm nay 28/10/2019"), which defeats the date-blind design: the
+# model reads the date from CONTENT, so withholding it as metadata measures
+# nothing. Full dates -> [DATE] and standalone years -> [YEAR], applied to BOTH
+# variants (the dated arm gets its date only via the explicit "Date:" header).
+# Known residuals, accepted and measured (report-only `date_in_title_share`):
+# day/month forms without a year ("28/10", "10月28日" handled; "hôm nay 28/10"
+# masked only if a year appears), and unadorned prices in the 1900-2069 range
+# that collide with years ("gold falls to 1950" masks as [YEAR] — comma forms
+# "1,950" and currency-prefixed "$1950" are protected).
+_MONTHS = (
+    "Jan(?:uary)?|Feb(?:ruary)?|Mar(?:ch)?|Apr(?:il)?|May|Jun(?:e)?|Jul(?:y)?|"
+    "Aug(?:ust)?|Sep(?:t(?:ember)?)?|Oct(?:ober)?|Nov(?:ember)?|Dec(?:ember)?"
+)
+_YR = r"(?:19|20)\d{2}"
+_DATE_RES: tuple[re.Pattern[str], ...] = (
+    re.compile(rf"\b{_YR}-\d{{1,2}}-\d{{1,2}}\b"),  # ISO
+    re.compile(rf"\b\d{{1,2}}[./-]\d{{1,2}}[./-]{_YR}\b"),  # D/M/Y, M/D/Y
+    re.compile(rf"\b{_YR}[./-]\d{{1,2}}[./-]\d{{1,2}}\b"),  # Y/M/D
+    re.compile(rf"\b(?:{_MONTHS})\.? \d{{1,2}}(?:st|nd|rd|th)?,? ?{_YR}\b", re.I),
+    re.compile(rf"\b\d{{1,2}}(?:st|nd|rd|th)? (?:{_MONTHS})\.?,? ?{_YR}\b", re.I),
+    re.compile(rf"{_YR}年(?:\d{{1,2}}月(?:\d{{1,2}}日)?)?"),  # CJK with year
+    re.compile(r"\d{1,2}月\d{1,2}日"),  # CJK month-day
+)
+# Standalone years, protected from comma-grouped and currency-prefixed prices.
+_YEAR_RE = re.compile(rf"(?<![\d,.$€£¥₹])\b{_YR}\b(?![\d,.]\d)")
+
+
+def _mask_dates(title: str) -> str:
+    """Replace calendar dates/years in title TEXT so blindness is real."""
+    out = title
+    for pat in _DATE_RES:
+        out = pat.sub("[DATE]", out)
+    return _YEAR_RE.sub("[YEAR]", out)
 
 
 def _normalize(title: str) -> str:
@@ -216,6 +256,8 @@ def _allocate(counts: dict[str, int], budget: int, ceiling: int) -> dict[str, in
     if budget <= 0 or not counts:
         return dict.fromkeys(counts, 0)
     total = sum(counts.values())
+    if total == 0:
+        return dict.fromkeys(counts, 0)
     caps = {k: min(v, ceiling) for k, v in counts.items()}
     ideal = {k: budget * counts[k] / total for k in counts}
     alloc = {k: min(int(ideal[k]), caps[k]) for k in counts}
@@ -306,12 +348,21 @@ def load_day_titles(date: str, *, max_titles: int = MAX_TITLES_PER_DAY) -> DayTi
         "SELECT timestamp_utc, headline_id, page_title, themes, src_lang "
         "FROM headlines "
         "WHERE timestamp_utc >= ? AND timestamp_utc < ? AND page_title IS NOT NULL "
-        "ORDER BY timestamp_utc"
+        # headline_id tie-break: GDELT stamps arrive in 15-minute batches with
+        # 500+ row tie groups, and DuckDB's parallel sort is unstable on ties —
+        # without a total order the 250 selected titles differ per process.
+        "ORDER BY timestamp_utc, headline_id"
     )
     with connection() as conn:
         df = conn.execute(sql, [str(day), str(nxt)]).fetchdf()
 
     n_titled = len(df)
+    if n_titled:
+        # Mask BEFORE admission/dedup so every downstream consumer (model,
+        # auditor, dedupe key) sees the same blinded text.
+        original = df["page_title"].astype(str)
+        df["page_title"] = original.map(_mask_dates)
+        df["_date_masked"] = df["page_title"] != original
     if df.empty:
         return DayTitles(date, [], [], 0, 0)  # corpus gap (n_titled 0)
 
@@ -341,4 +392,5 @@ def load_day_titles(date: str, *, max_titles: int = MAX_TITLES_PER_DAY) -> DayTi
         n_dropped_cap=n_dropped_cap,
         n_titled=n_titled,
         langs=[str(x) for x in df["src_lang"].tolist()] if "src_lang" in df.columns else [],
+        n_date_masked=int(df["_date_masked"].sum()) if "_date_masked" in df.columns else 0,
     )

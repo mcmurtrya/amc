@@ -30,7 +30,13 @@ MODEL_DEFAULT = "claude-opus-4-8"
 # native terms (multilang.BRIDGE_LANGS; precision >= the 0.58 eng anchor),
 # language-stratified cap reserve in titles.py, and the any-language prompt
 # rule below. Still before any run.
-TASK_VERSION = "v3.2"
+# v3.3 (2026-07-23, pre-spend review): date-blindness made REAL — titles.py
+# masks calendar dates/years out of title TEXT for both variants (76/80 sample
+# days carried the literal date in-content, giving the A/B no contrast) — and
+# title selection made deterministic (ORDER BY tie-break; previously ~half the
+# 250 titles changed per load). Input-pipeline changes, hence the bump, though
+# this file's prompt/schema text is unchanged. Still before any run.
+TASK_VERSION = "v3.3"
 
 # Controlled event-type vocabulary (subsumes the five overlapping lens candidates
 # — cb_gold_flow / trade_policy / retail_bullion_stress / macro-prints — as enum
