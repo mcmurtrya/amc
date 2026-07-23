@@ -3357,3 +3357,53 @@ the superseding pre-registration's code pin moves to this commit.
 
 Full suite after the review fixes: **636 passed** (10m21s). 76 annotate/precision tests;
 ruff + mypy clean.
+
+## 2026-07-23 — STAGE-0 PILOT RAN: GATE GREEN (7/7 auto gates pass)
+
+The pre-registered pilot executed end-to-end: batch `msgbatch_012Sr7p56kq8n4wopY7TygMX`,
+160/160 requests succeeded (80 days × blind+dated), instrument v3.3 /
+`prompt_hash 66beed5f44312fe0` (`results_current` PASS confirms no drift). Results:
+`data/processed/annotate_pilot.parquet` (+ `.batch.json` sidecar). Per the pre-registration,
+no raw labels were read before the card was generated; this entry records the card.
+
+**Gated (all PASS):** `results_current` 1.000 · `any_metal_coverage` 1.000 (80/80) ·
+`pgm_stress_coverage` 0.667 (gate 0.20) · `fomc_recall` 1.000 (20/20; sign agreement 6/9 —
+confounded, as pre-noted) · `date_blind_drift` **0.087** (gate ≤0.10 — passed, not
+comfortably) · `novelty_fill` 1.000 · `event_time_ref_fill` 1.000 (3,377/3,377 event
+titles each). **GATE: GREEN → human audit, then Stage 1.**
+
+**Report-only vs pre-registered expectations:**
+- `offtopic[eng]` **0.493** vs predicted ≈0.40 — anchor prediction directionally right,
+  judge/annotator strictness a touch higher. Bridge languages mostly BETTER than English:
+  zho 0.235, tha 0.251, deu 0.327 (theme-admits), ara 0.336, vie 0.337, tur 0.357,
+  hin 0.166. **Outlier: `offtopic[ron]` 0.747** (271/363) vs the retest's 0.39 — far
+  beyond n=100 noise; ron flagged for Stage-1 re-examination (candidate drop or stop-list
+  round 2; possible causes: annotator-vs-judge strictness, day-mix, residual AUR-adjacent
+  politics). spa 0.573 / rus 0.548 are base-gate theme admissions (not bridge), consistent
+  with old-gate noise.
+- **Per-title A/B drift — the honest concern:** `novelty_ab_drift` **0.149**,
+  `event_time_ref_ab_drift` **0.189**. Day-level labels are date-stable (0.087 ≤ gate),
+  but revealing the date changes the dating fields on 15–19% of event titles. No
+  pre-registered gate fires (report-only, and the FAIL branch required day-level breach),
+  but this materially qualifies Phase 10 use: **first-report dating should not lean on
+  novelty/event_time_ref without the human audit specifically checking those fields** —
+  carried forward as a Stage-1 condition, recorded here before any audit label exists.
+- `v3_spurious_emission` 0.003 — the OMIT rule held (55/16,534).
+- `date_in_title_share` 0.102 — masking bought real blindness on ~2,027 titles.
+- `region_informative` 0.895 (expected sparse — annotator fills it eagerly; fine),
+  `physical_tightness` 0.020 (sparse as expected), `scrap_recycling_fires` **0.011 — the
+  channel EXISTS**: 38 event titles across 80 days, first evidence for backlog E2's target.
+
+**Cost honesty:** actual **$45.96** vs $32.63 estimated (in 1.70M / out 3.34M tokens) —
+under the $50 ceiling with the ~$2.9 reproducibility addendum (launched, running) landing
+total ≈ $48.9. Cause: measured **84 output tok/title vs the modelled 60** (richer event
+records + region on ~90% of events). Full-run re-projection at measured rates: single
+blind variant ≈ **$482 Opus batch / ≈$289 Sonnet** (was $342/$205) — a Stage-1 input.
+All 160 requests `end_turn` — the 32k output ceiling never clipped.
+
+**Next per pre-registration:** (1) reproducibility addendum (running; day ≥0.80,
+per-title relevant ≥0.90, sha-guarded); (2) **human audit** — template exported to
+`data/processed/annotate_audit_template.csv` (7,500 titles over 30 days, titles only,
+no model outputs); auditor labels `relevant` 0/1, then `check --audit <csv>` (≥0.80);
+(3) Stage-1 decision (full-run tier, LLM pre-gate, ron re-examination, novelty
+qualification).
