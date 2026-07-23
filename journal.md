@@ -3123,3 +3123,40 @@ are deliberately untouched so their measured numbers remain valid.
   KEEP-six untouched guard). 56 annotate/precision tests green; ruff + mypy clean.
 - **Retest sample drawn under v2** (pool composition reflects the fixes — La Plata titles
   no longer enter at all) and submitted. Results to be recorded when the batch lands.
+
+## 2026-07-23 (night) — Retest results: 3 promoted, 11 dropped; final bridge = 9 languages
+
+Retest batch landed (1,400/1,400 judged, ~$0.50; results
+`data/processed/lang_precision_retest_results.parquet`, terms v2). Gate re-counted under
+v2 (`lang_gate_count`): total new admissions 520 → **435/day** — the stops themselves
+removed ~85/day of measured noise before any judging.
+
+**Promoted (fix worked):**
+
+| lang | v1 → v2 precision | v2 new/day | relevant/day | what fixed it |
+|---|---|---|---|---|
+| jpn | 0.02 → **0.68** | 0.6 | ~0.4 | dropping ゴールド (+0.66 — but admissions fell 5.0→0.6/day; kept because the surviving terms cost nothing) |
+| ind | 0.58 → **0.62** | 22.2 | ~14 | medali/olimpiade veto — the real retest win |
+| ron | 0.22 → **0.61** | 6.2 | ~3.8 | the AUR case fix (+0.39) |
+
+**Dropped (11), reason recorded:** the residual noise is DIFFUSE, no longer one nameable
+pattern — second-round stop-listing would chase tails. spa 0.24 / ita 0.20: Romance sports
+metonymy uses bare oro/plata/argento *without* "medalla/medaglia" ("conquista el oro"), and
+plata-as-money and non-La-Plata places persist; rus 0.43 / ukr 0.21 / pol 0.47 / ell 0.31:
+idiomatic gold-stems (золотые руки, χρυσή ευκαιρία, золоті ворота); deu 0.43: Gold/Silber
+surnames (unfixable without NER); por 0.44 / ben 0.53 residual places+persons; fra 0.58
+(ties the anchor exactly) and hin 0.56 are borderline but tiny (4.4 and 4.7/day) — not
+worth the maintenance. Consistency note: pol moved −0.05 under stops that can only remove
+noise ⇒ sampling noise at n=100 is ±~0.05; the 0.53–0.58 cluster is within-noise of the
+anchor, reinforcing drop-not-chase.
+
+**Final v3.2 language set (9):** zho, vie, ara, tur, tha, kor, ind, ron, jpn —
+~265 admitted/day at measured precisions ⇒ **~+195 relevant titles/day**. For scale: the
+current English gate yields ~161 relevant/day (278 × 0.58 anchor) — the bridge roughly
+**doubles relevant coverage** for about $1.25 of total measurement spend.
+
+Remaining before the pilot: freeze v3.2 (9-language terms + language-stratified cap
+reserve + "any language" prompt line, TASK_VERSION bump), pre-register the Stage-0 gate in
+the journal per §4.4, then run. The drop list and reasons stay in this entry so nobody
+re-litigates spa/ita without new evidence (the fix there is NER or a smarter gate, not
+more stop words).

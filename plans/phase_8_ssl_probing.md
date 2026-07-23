@@ -786,7 +786,11 @@ v1.0, ~$0.75): six languages pass with no stop-listing (kor .89, zho .78, tha .7
 vie .74, ara .73, tur .66) vs the **current English gate's own 0.58** under the same
 judge; jpn fails hard (.02, ゴールド=fashion); the rest have one dominant, stop-listable
 FP pattern each (AUR the Romanian party, La Plata place names, medaglia d'oro). Full
-table in journal.md 2026-07-23; results parquet in data/processed/. (2) The `page_title` slug boundary at 2019-09-22 is an **upstream GDELT feature** (0%
+table in journal.md 2026-07-23; results parquet in data/processed/. **Retest under terms v2
+(stop-lists + case fixes, same day): jpn 0.02→0.68, ron 0.22→0.61, ind 0.58→0.62 promoted;
+11 languages dropped (diffuse residual noise — Romance bare-metal sports metonymy, Slavic/
+Greek gold-idioms, German surnames). Final bridge set: 9 languages, ~+195 relevant
+titles/day (~doubles the English gate's ~161). v3.2 freeze pending.** (2) The `page_title` slug boundary at 2019-09-22 is an **upstream GDELT feature** (0%
 before, 99.47% after — GDELT never emitted the GKG `<PAGE_TITLE>` tag earlier), so the
 annotator is titleless before then, unfixably. (3) **Corpus INGESTION gaps** within the era —
 mapped by `scripts/coverage_audit.py`: **48 missing days in 4 windows**. One (2017-08-29) is the
