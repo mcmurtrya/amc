@@ -155,3 +155,91 @@ def test_lang_gate_count_script_uses_shared_terms():
 
 def test_judge_schema_serializes():
     json.dumps(precision.JUDGE_SCHEMA)
+
+
+# --- terms v2 (2026-07-23): measured-FP stop-lists + case fixes -------------
+
+
+def test_ron_case_distinction_kills_the_party():
+    """`aur` the metal matches; `AUR` the political party must not."""
+    pat = re.compile(LANG_TERMS["ron"])
+    assert pat.search("Prețul la aur atinge un nou record")
+    assert pat.search("Aurul se scumpește")
+    assert pat.search("aurului")  # genitive, case-folded stem group
+    assert not pat.search("Liderii AUR țin cu Donald Trump")
+    assert not pat.search("George Simion (AUR) a declarat")
+
+
+def test_jpn_gold_katakana_removed():
+    """ゴールド was 70/100 fashion/brand FPs — dropped from the vocabulary."""
+    assert "ゴールド" not in LANG_TERMS["jpn"]
+    pat = re.compile(LANG_TERMS["jpn"])
+    assert pat.search("金価格が上昇")  # the precise compounds survive
+    assert not pat.search("ゴールドマン傘下マーカス")  # Goldman Sachs transliterated
+
+
+def test_stop_terms_compile_and_only_cover_known_languages():
+    from metals.annotate.multilang import LANG_STOP_TERMS
+
+    for pat in LANG_STOP_TERMS.values():
+        re.compile(pat)
+    assert set(LANG_STOP_TERMS) <= set(LANG_TERMS)
+    # The six languages that passed outright are deliberately untouched.
+    assert not {"zho", "vie", "ara", "tur", "tha", "kor"} & set(LANG_STOP_TERMS)
+
+
+def test_measured_fp_patterns_are_vetoed():
+    from metals.annotate.multilang import LANG_STOP_TERMS
+
+    cases = {
+        "spa": ["El arzobispo de La Plata", "Mar del Plata", "medalla de oro"],
+        "ita": ["Medaglia d'argento di Benemerenza", "Pomodorino d'Oro 2019 premia"],
+        "rus": ["золотая медаль", "Золотой глобус"],
+        "fra": ["l'or noir du Sahara", "médaille d'or olympique"],
+        "ben": ["সোনালী ব্যাংক"],
+        "pol": ["5 mln złotych"],
+        "ell": ["Χρυσή Αυγή", "χρυσό μετάλλιο"],
+        "por": ["Ouro Preto recebe turistas"],
+    }
+    for lang, titles in cases.items():
+        stop = re.compile(LANG_STOP_TERMS[lang])
+        for title in titles:
+            assert stop.search(title), f"{lang} stop misses: {title}"
+
+
+def test_stops_do_not_kill_relevant_titles():
+    from metals.annotate.multilang import LANG_STOP_TERMS
+
+    keep = {
+        "spa": "El precio del oro alcanza un máximo histórico",
+        "ita": "Quotazione dell'oro in rialzo, lingotti richiesti",
+        "rus": "Цены на золото выросли на бирже",
+        "fra": "Le cours de l'or bat un record",
+        "por": "Preço do ouro sobe com procura por refúgio",
+    }
+    for lang, title in keep.items():
+        term = re.compile(LANG_TERMS[lang])
+        stop = re.compile(LANG_STOP_TERMS[lang])
+        assert term.search(title), f"{lang} term misses relevant: {title}"
+        assert not stop.search(title), f"{lang} stop kills relevant: {title}"
+
+
+def test_multi_admit_case_param_count_and_no_flag_contract():
+    from metals.annotate.multilang import LANG_STOP_TERMS, multi_admit_case
+
+    arms, params = multi_admit_case()
+    assert len(params) == len(LANG_TERMS) + len(LANG_STOP_TERMS)
+    # The contract: callers must not pass a flags argument (ron's case fix).
+    assert ", 'i')" not in arms
+
+
+def test_terms_version_bumped_and_stamped():
+    from metals.annotate.multilang import TERMS_VERSION
+
+    assert TERMS_VERSION == "v2"
+
+
+def test_gate_count_script_uses_shared_admit_helper():
+    src = open("scripts/lang_gate_count.py").read()
+    assert "multi_admit_case()" in src
+    assert "regexp_matches(page_title, ?, 'i')\" for lang in LANG_TERMS" not in src

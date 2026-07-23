@@ -29,7 +29,7 @@ from typing import cast
 import pandas as pd
 
 from metals.annotate import schema as sch
-from metals.annotate.multilang import LANG_TERMS
+from metals.annotate.multilang import TERMS_VERSION, multi_admit_case
 from metals.annotate.pilot import PRICING, _approx_tokens, _client
 from metals.annotate.titles import _STOP_RE, METAL_TITLE_RE
 from metals.data.db import connection
@@ -123,18 +123,22 @@ def judge_prompt_hash(model: str) -> str:
 # ---------------------------------------------------------------------------
 # Sampling — one read-only scan, deterministic via hash ordering
 # ---------------------------------------------------------------------------
-def draw_sample(per_lang: int = PER_LANG_SAMPLE) -> pd.DataFrame:
-    """Sample admitted titles per language: (lang, date, title).
+def draw_sample(per_lang: int = PER_LANG_SAMPLE, langs: list[str] | None = None) -> pd.DataFrame:
+    """Sample admitted titles per language: (lang, date, title, terms_version).
 
-    Non-English pools are the NEW admissions (multilingual term hit, not
-    admitted by the current gate); the eng pool is the current gate itself (the
-    judge-strictness anchor). Distinct titles only (case-folded), earliest date
-    kept, ordered by a seeded hash so the draw is reproducible.
+    Non-English pools are the NEW admissions (multilingual terms hit, stops
+    don't, and the current gate did not admit); the eng pool is the current
+    gate itself (the judge-strictness anchor). ``langs`` restricts the draw —
+    e.g. the retest tier only, leaving passed languages' measurements intact.
+    Distinct titles only (case-folded), earliest date kept, ordered by a seeded
+    hash so the draw is reproducible.
     """
-    case_arms = "\n".join(
-        f"WHEN src_lang = '{lang}' THEN regexp_matches(page_title, ?, 'i')" for lang in LANG_TERMS
-    )
-    params = [METAL_TITLE_RE.pattern, _STOP_RE.pattern] + [LANG_TERMS[lang] for lang in LANG_TERMS]
+    case_arms, term_params = multi_admit_case()
+    params = [METAL_TITLE_RE.pattern, _STOP_RE.pattern] + term_params
+    lang_filter = ""
+    if langs:
+        quoted = ", ".join("'" + lang.replace("'", "") + "'" for lang in langs)
+        lang_filter = f"AND src_lang IN ({quoted})"
     sql = f"""
     WITH era AS (
         SELECT CAST(timestamp_utc AS DATE) AS d, src_lang, page_title, themes
@@ -154,8 +158,9 @@ def draw_sample(per_lang: int = PER_LANG_SAMPLE) -> pd.DataFrame:
     pool AS (
         SELECT src_lang, d, page_title
         FROM flagged
-        WHERE (src_lang = 'eng' AND cur)
-           OR (src_lang <> 'eng' AND multi AND NOT cur)
+        WHERE ((src_lang = 'eng' AND cur)
+           OR (src_lang <> 'eng' AND multi AND NOT cur))
+           {lang_filter}
     ),
     dedup AS (
         SELECT src_lang,
@@ -173,7 +178,9 @@ def draw_sample(per_lang: int = PER_LANG_SAMPLE) -> pd.DataFrame:
     ORDER BY lang, date
     """
     with connection(read_only=True) as conn:
-        return conn.execute(sql, params).fetchdf()
+        df = conn.execute(sql, params).fetchdf()
+    df["terms_version"] = TERMS_VERSION
+    return df
 
 
 # ---------------------------------------------------------------------------
@@ -276,6 +283,7 @@ def run_judge(
             "model": model,
             "judge_version": JUDGE_VERSION,
             "judge_prompt_hash": phash,
+            "terms_version": TERMS_VERSION,
             "batch_id": batch.id,
             "pulled_at": pulled_at,
         }

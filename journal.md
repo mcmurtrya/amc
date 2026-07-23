@@ -3089,3 +3089,37 @@ pennies. spa is the biggest post-fix upside (90 admitted/day, mostly La Plata no
 
 Decision NOT taken here: which tier-2 languages to fix vs drop, and the v3.2 freeze —
 that's the user's call with this table in hand.
+
+## 2026-07-23 (evening) — Terms v2: measured-FP stop-lists + case fixes; retest submitted
+
+Adjusted the multilingual vocabulary from the mini-batch's measured failure patterns and
+resubmitted the 14 retest-tier languages (1,400 titles, ~$0.50 Opus batch). The six KEEPs
+are deliberately untouched so their measured numbers remain valid.
+
+- **ron — the case fix that forced an architecture change.** `AUR` (the political party,
+  53/100 FPs) is separable from `aur` (the metal) only by case, and RE2 has no lookarounds
+  to express that under an external `'i'` flag. So the whole vocabulary moved to **inline
+  flags**: every pattern now carries its own `(?i)` (single leading occurrence — Python 3.11
+  rejects mid-pattern global flags, which the first draft tripped over), ron mixes a
+  case-folded stem group `(?i:aurul|aurului|argint|platin|paladiu)` with case-sensitive
+  `\b[Aa]ur\b`, and **callers must not pass a flags argument** (documented in
+  `multi_admit_case`'s contract — an outer flag would silently resurrect the party).
+- **jpn — ゴールド dropped** (70/100 FPs: fashion/brands/LEED/Goldman-transliterated);
+  the precise compounds (金価格|金相場|金先物|プラチナ|パラジウム|貴金属|銀価格) remain for the retest.
+- **`LANG_STOP_TERMS` (13 languages)** — each veto traces to a measured pattern: La Plata /
+  del Plata + medall (spa ×49), medagli/premi (ita ×40), Olympic-medal vocabulary across
+  rus/ukr/pol/deu/fra/hin/ind, l'or noir/blanc/vert (fra), Η Αυγή / Golden Dawn (ell),
+  সোনালী (Sonali Bank, ben), złotych/złotego (the currency, pol), Ouro Preto/Branco/Fino
+  (por). Admission is now `terms hit AND NOT stops hit`, built once in
+  `multilang.multi_admit_case()` and shared by `precision.draw_sample` and
+  `scripts/lang_gate_count.py` (the gate-count diagnostic now measures post-stop
+  admissions).
+- **Provenance:** `TERMS_VERSION = "v2"` stamped into sample and results parquet.
+- **Verified in RE2 itself before spending:** every term/stop pattern compiles under
+  DuckDB's engine, the ron AUR/aur distinction holds there, and `(?i)` Unicode case-folding
+  works on Cyrillic — Python-`re` agreement alone would not have proven any of that.
+- **Quality:** +9 tests (ron case both engines' semantics, jpn term removal, measured-FP
+  vetoes fire, stops don't kill known-relevant titles, param-count/no-flag contract,
+  KEEP-six untouched guard). 56 annotate/precision tests green; ruff + mypy clean.
+- **Retest sample drawn under v2** (pool composition reflects the fixes — La Plata titles
+  no longer enter at all) and submitted. Results to be recorded when the batch lands.

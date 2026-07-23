@@ -30,12 +30,16 @@ def main() -> None:
 
     p_sample = sub.add_parser("sample", help="draw the per-language title sample (read-only scan)")
     p_sample.add_argument("--per-lang", type=int, default=precision.PER_LANG_SAMPLE)
+    p_sample.add_argument("--langs", help="comma-separated src_lang subset (e.g. retest tier)")
+    p_sample.add_argument("--out", type=Path, default=SAMPLE_PATH)
 
     p_est = sub.add_parser("estimate", help="offline token/cost estimate")
     p_est.add_argument("--model", default=schema.MODEL_DEFAULT)
+    p_est.add_argument("--sample", type=Path, default=SAMPLE_PATH)
 
     p_run = sub.add_parser("run", help="submit the judging Batch (PAID) and poll")
     p_run.add_argument("--model", default=schema.MODEL_DEFAULT)
+    p_run.add_argument("--sample", type=Path, default=SAMPLE_PATH)
     p_run.add_argument("--out", type=Path, default=RESULTS_PATH)
 
     p_rep = sub.add_parser("report", help="per-language precision report")
@@ -44,17 +48,18 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.cmd == "sample":
-        df = precision.draw_sample(per_lang=args.per_lang)
-        SAMPLE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        df.to_parquet(SAMPLE_PATH, index=False)
+        langs = args.langs.split(",") if args.langs else None
+        df = precision.draw_sample(per_lang=args.per_lang, langs=langs)
+        args.out.parent.mkdir(parents=True, exist_ok=True)
+        df.to_parquet(args.out, index=False)
         counts = df.groupby("lang").size().to_dict()
-        print(f"Wrote {SAMPLE_PATH} — {len(df)} titles across {df['lang'].nunique()} languages")
+        print(f"Wrote {args.out} — {len(df)} titles across {df['lang'].nunique()} languages")
         print("  " + ", ".join(f"{k}:{v}" for k, v in sorted(counts.items())))
     elif args.cmd == "estimate":
-        df = pd.read_parquet(SAMPLE_PATH)
+        df = pd.read_parquet(args.sample)
         print(precision.estimate(df, model=args.model))
     elif args.cmd == "run":
-        df = pd.read_parquet(SAMPLE_PATH)
+        df = pd.read_parquet(args.sample)
         res = precision.run_judge(df, model=args.model, out_path=args.out)
         n_ok = int(res["ok"].sum())
         print(f"Wrote {args.out} — {n_ok}/{len(res)} titles judged (model {args.model})")

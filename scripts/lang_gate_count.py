@@ -15,7 +15,7 @@ the LLM `relevant` flag); this measures the size of the composition trade.
 
 import re
 
-from metals.annotate.multilang import LANG_TERMS
+from metals.annotate.multilang import LANG_TERMS, multi_admit_case
 from metals.annotate.titles import _STOP_RE, METAL_TITLE_RE
 from metals.data.db import connection
 
@@ -26,10 +26,10 @@ STOP = _STOP_RE.pattern
 for pat in LANG_TERMS.values():
     re.compile(pat)
 
-case_arms = "\n".join(
-    f"WHEN src_lang = '{lang}' THEN regexp_matches(page_title, ?, 'i')" for lang in LANG_TERMS
-)
-params = [ENG, STOP] + [LANG_TERMS[lang] for lang in LANG_TERMS]
+# Patterns are self-contained (inline (?i)); no outer flag, or ron's
+# case-sensitive aur/AUR distinction is erased. Stops applied per language.
+case_arms, term_params = multi_admit_case()
+params = [ENG, STOP] + term_params
 
 SQL = f"""
 WITH era AS (
