@@ -771,7 +771,17 @@ cost/coverage call, but the clock-bias is now fixed regardless.
 **Standing limitations (documented, not bugs):** (1) the keyword gate is **English-centric** —
 ~64% of gold-relevant news is non-English (Arabic 24%, Chinese 14%, …), and only gold has a
 non-English lifeline (the `ECON_GOLDPRICE` theme-OR); silver/PGM lose their non-English
-stratum. (2) The `page_title` slug boundary at 2019-09-22 is an **upstream GDELT feature** (0%
+stratum. **Measured 2026-07-23** (`scripts/lang_gate_count.py`, 62.2M title-era rows): the
+current gate admits ~576 unique candidates/day (278 English; Arabic already gets ~84/day via
+the gold theme), and first-cut native-script terms for 20 languages would add **~520 unique
+titles/day** — zho +119, spa +90, vie +74 (the Vietnamese domestic gold market is nearly
+invisible today at 1.0/day), rus +38. Because the 250/day cap binds, admission is a
+*composition* trade (needs a language-stratified reserve in `_select_capped`, template = the
+US-session reserve) or a cap raise (~400 ⇒ full run ~$530 Opus / ~$318 Sonnet). Terms are
+recall-first (vàng = yellow, plata = money slang, złota ↔ złoty) — a per-language stop-list
+pass plus a per-language `corpus_offtopic_fraction` split in the pilot must precede adoption;
+the annotator itself is language-capable, so the only prompt change is a "titles may be in
+any language" line. (2) The `page_title` slug boundary at 2019-09-22 is an **upstream GDELT feature** (0%
 before, 99.47% after — GDELT never emitted the GKG `<PAGE_TITLE>` tag earlier), so the
 annotator is titleless before then, unfixably. (3) **Corpus INGESTION gaps** within the era —
 mapped by `scripts/coverage_audit.py`: **48 missing days in 4 windows**. One (2017-08-29) is the

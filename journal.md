@@ -2963,3 +2963,43 @@ the review fixes are green across the whole repo, not just the targeted suites. 
 status line finalized from "run in progress" to 597 all-pass. (The 53-minute figure from
 2026-07-20 reflected contention with the concurrent review agents; ~19 min is the
 uncontended runtime.)
+
+## 2026-07-23 — Language gap measured: multilingual gate would ~double the candidate pool
+
+Follow-up to the v3.1 annotator work: quantified the §8.1 standing limitation (1) — the
+English-centric keyword gate — with a dry SQL count before deciding whether to bridge it.
+New diagnostic `scripts/lang_gate_count.py` reproduces the production gate exactly in SQL
+((`METAL_TITLE_RE` ∨ `ECON_GOLDPRICE` theme) ∧ ¬(stop-phrase ∧ ¬theme)) and applies
+first-cut native-script metal terms for 20 languages, each restricted to its own `src_lang`
+rows. Scan: 62.2M title-era rows, 2,416 days, ~90 s, read-only.
+
+- **Headline: +~520 unique titles/day vs the current gate's ~576** — a near-doubling of the
+  candidate pool. By language: zho +118.7/day, spa +90.0, vie +73.6, rus +37.6, ita +33.0,
+  tur +27.0, ind +23.7, deu +23.0, ron +19.5, ell +18.2, ara +13.5, then a long tail.
+- **The theme lifeline is real but lopsided.** Arabic already gets 83.8 titles/day through
+  the existing gate (the `ECON_GOLDPRICE` theme working as designed, gold-only). The real
+  blind spots are **Vietnamese (1.0/day today** despite the SJC domestic-gold news market)
+  and Spanish (6.6/day). English is only 278 of the current 576/day — the existing gate
+  already admits ~300 non-English titles daily via themes/producers/Latin collisions.
+- **Corpus language mix (title era):** eng 34.8%, zho 13.9%, spa 8.4%, vie 6.2%, rus 5.4%,
+  fra 3.8%, deu 3.4% … (the plan's "Arabic 24%" figure is share of *gold-relevant* news, a
+  different denominator — both are true).
+- **The cap makes this a composition trade, not a cost increase.** Candidates 576 → ~1,096
+  against the binding 250/day cap ⇒ naive admission evicts ~half the English candidates.
+  Either a language-stratified reserve in `_select_capped` (cost unchanged; the US-session
+  reserve is the template) or a cap raise to ~400 (cost scales with titles/day: full run
+  ~$342.54 → ~$530 Opus, ~$318 Sonnet).
+- **Precision is deliberately unhandled at this stage** — the terms are recall-first and I
+  wrote them non-natively: vàng is also "yellow", plata is money slang, złota collides with
+  the złoty, Turkish altın is also adjectival. Before adoption: a per-language stop-list
+  pass (native/LLM-assisted), a per-language split of `corpus_offtopic_fraction` in the
+  Stage-0 card, and the one-line prompt change ("titles may be in any language" — the
+  annotator model reads all of these natively, which is why the bridge is cheap at all).
+- Bookkeeping: the numbers went into `plans/phase_8_ssl_probing.md` §8.1 standing
+  limitation (1) and `plans/research_backlog.md` F1. **Decision deliberately not made** —
+  whether to adopt (and reserve vs cap-raise) is a schema-v3.2 call to take before the
+  pilot pre-registration, not after.
+
+Sanity note on 576 vs the plan's "mean ~696": mine counts exact-duplicate-collapsed unique
+titles per *calendar* day over 2,416 days (weekends included); the 696 figure was
+`_normalize`-deduped candidates on sampled days. Consistent, different denominators.
