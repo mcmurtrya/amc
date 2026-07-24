@@ -3407,3 +3407,12 @@ per-title relevant ≥0.90, sha-guarded); (2) **human audit** — template expor
 no model outputs); auditor labels `relevant` 0/1, then `check --audit <csv>` (≥0.80);
 (3) Stage-1 decision (full-run tier, LLM pre-gate, ron re-examination, novelty
 qualification).
+
+**Reproducibility addendum (landed):** 10 blind days re-submitted, all title lists
+sha-identical to the primary run (determinism fix doing its job — zero excluded pairs).
+**Day-label agreement 20/20 = 1.00 (gate ≥0.80 PASS); per-title `relevant` agreement
+2,416/2,500 = 0.97 (gate ≥0.90 PASS).** Repro spend $2.84 → total pilot spend **$48.80
+of the $50 ceiling**. Both pre-registered addendum thresholds cleared; the instrument is
+stable across resubmission, not just internally consistent. Stage-0 machine gates are now
+fully green — remaining before Stage 1: the human audit (template exported) and the
+Stage-1 decisions (tier, LLM pre-gate, ron, novelty qualification).
